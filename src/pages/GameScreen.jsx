@@ -7,8 +7,9 @@ import ArithmeticChallenge from '../components/challenges/ArithmeticChallenge.js
 import ReasoningChallenge from '../components/challenges/ReasoningChallenge.jsx'
 import EnglishChallenge from '../components/challenges/EnglishChallenge.jsx'
 import { questionBank } from '../utils/questionBank.js'
+import { resetAIHistory } from '../utils/aiGenerator.js'
 
-const TOTAL_ROUNDS = 5
+const TOTAL_ROUNDS = 3
 const LEVEL_LABEL = { easy: 'EASY', medium: 'MEDIUM', extreme: 'EXTREME' }
 const CATS = ['arithmetic', 'reasoning', 'english']
 
@@ -47,12 +48,18 @@ const GameScreen = ({
         longestStreakP2: 0,
     })
 
+    const [answerLog, setAnswerLog] = useState([])
+
     const questionStartRef = useRef(0)
+    const currentQuestionRef = useRef(null)
     const skipRef = useRef(null)
 
     const isSingle = mode === 'single'
 
-    useEffect(() => { questionBank.reset() }, [])
+    useEffect(() => {
+        questionBank.reset()
+        resetAIHistory()
+    }, [])
 
     const pickCategory = () => {
         if (category === 'mixed') {
@@ -81,8 +88,28 @@ const GameScreen = ({
         setTimeout(() => setResult(null), 500)
     }
 
-    const recordAnswer = (player, correct) => {
+    const recordAnswer = (player, correct, chosenAnswer) => {
         const responseMs = Date.now() - questionStartRef.current
+        const q = currentQuestionRef.current
+
+        if (q) {
+            setAnswerLog((log) => [
+                ...log,
+                {
+                    round,
+                    category: currentCat,
+                    topic: q.topic,
+                    question: q.question,
+                    correct: q.correct,
+                    chosen: chosenAnswer ?? null,
+                    player,
+                    correctFlag: correct,
+                    timeMs: responseMs,
+                    status: correct ? 'correct' : 'wrong',
+                },
+            ])
+        }
+
         setQuestionStats((s) => {
             const next = { ...s, total: s.total + 1 }
             if (correct) {
@@ -113,6 +140,25 @@ const GameScreen = ({
     }
 
     const recordTimeout = () => {
+        const q = currentQuestionRef.current
+        if (q) {
+            setAnswerLog((log) => [
+                ...log,
+                {
+                    round,
+                    category: currentCat,
+                    topic: q.topic,
+                    question: q.question,
+                    correct: q.correct,
+                    chosen: null,
+                    player: null,
+                    correctFlag: false,
+                    timeMs: timerDuration * 1000,
+                    status: 'skipped',
+                },
+            ])
+        }
+
         setQuestionStats((s) => ({
             ...s,
             total: s.total + 1,
@@ -122,9 +168,10 @@ const GameScreen = ({
         }))
     }
 
-    const handleQuestionReady = (skipFn) => {
+    const handleQuestionReady = (skipFn, currentQuestion) => {
         skipRef.current = skipFn || null
         questionStartRef.current = Date.now()
+        currentQuestionRef.current = currentQuestion || null
         setQuestionReady(true)
         setTimerPaused(false)
         setQuestionKey((k) => k + 1)
@@ -148,26 +195,15 @@ const GameScreen = ({
         const p2 = finalP2 ?? p2Score
         setRoundSummary({ p1, p2, reason })
 
-        setRoundHistory((h) => [
-            ...h,
-            {
-                round,
-                category: currentCat,
-                p1,
-                p2,
-                reason,
-                level,
-            },
-        ])
+        const roundEntry = { round, category: currentCat, p1, p2, reason, level }
+        setRoundHistory((h) => [...h, roundEntry])
 
         setTimeout(() => {
             if (round >= TOTAL_ROUNDS) {
                 onFinish(p1, p2, {
-                    roundHistory: [
-                        ...roundHistory,
-                        { round, category: currentCat, p1, p2, reason, level },
-                    ],
+                    roundHistory: [...roundHistory, roundEntry],
                     questionStats,
+                    answerLog,
                     level,
                     mode,
                     timerDuration,
@@ -210,6 +246,7 @@ const GameScreen = ({
 
     return (
         <div className="relative min-h-screen w-full flex justify-center items-start px-3.5 pb-3.5 pt-[76px] z-10">
+
             <FloatingHearts />
 
             <div className="w-full max-w-[620px] flex flex-col gap-2.5 pt-1">

@@ -54,6 +54,7 @@ const App = () => {
             roundHistory={report?.roundHistory || []}
             questionStats={report?.questionStats || null}
             timerDuration={report?.timerDuration || timerDuration}
+            answerLog={report?.answerLog || []}
           />
         } />
       </Routes>

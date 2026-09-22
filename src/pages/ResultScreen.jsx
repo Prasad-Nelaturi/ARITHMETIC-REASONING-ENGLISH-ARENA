@@ -2,10 +2,15 @@ import React, { useEffect, useState, useMemo } from 'react'
 import {
     Crown, Heart, Trophy, Medal, Users, Target,
     Clock, Zap, Flame, Brain, TrendingUp, Award, BarChart3, Check, X,
-    Star, Sparkles, Rocket, Shield, BookOpen,
+    Star, Sparkles, Rocket, Shield, BookOpen, ChevronDown, ChevronUp,
+    XCircle, HelpCircle, Lightbulb, Loader2,
 } from 'lucide-react'
 import FloatingHearts from '../components/FloatingHearts.jsx'
+import { generateExplanation } from '../utils/aiGenerator.js'
 
+/* =========================================================
+   RANK SYSTEM
+   ========================================================= */
 const RANK_TITLES = [
     {
         min: 145,
@@ -139,10 +144,7 @@ const computeMetrics = (stats, history, level, mode, timerDuration) => {
 
     const rank = RANK_TITLES.find((r) => iq >= r.min) || RANK_TITLES[RANK_TITLES.length - 1]
 
-    return {
-        iq, accuracyPct, avgResponseSec, speedRatio, speedRating,
-        longestStreak, rank, levelMult,
-    }
+    return { iq, accuracyPct, avgResponseSec, speedRatio, speedRating, longestStreak, rank, levelMult }
 }
 
 /* =========================================================
@@ -153,6 +155,7 @@ const ResultScreen = ({
     mode = 'double', level = 'easy', onReset, onHome,
     roundHistory = [],
     questionStats = null,
+    answerLog = [],
     timerDuration = 15,
 }) => {
     const [showConfetti, setShowConfetti] = useState(true)
@@ -162,7 +165,8 @@ const ResultScreen = ({
     }, [])
 
     const isSingle = mode === 'single'
-    const total = 50
+    const total = 30   // 3 rounds × 10 questions
+
     const winner = isSingle ? 1 : player1Score > player2Score ? 1 : player2Score > player1Score ? 2 : 0
 
     const title = isSingle
@@ -185,6 +189,12 @@ const ResultScreen = ({
     }, [questionStats, roundHistory, level, mode, timerDuration])
 
     const [tab, setTab] = useState('summary')
+
+    // Review tab state
+    const [reviewFilter, setReviewFilter] = useState('wrong')
+    const [expandedId, setExpandedId] = useState(null)
+    const [explanationCache, setExplanationCache] = useState({})
+    const [loadingId, setLoadingId] = useState(null)
 
     return (
         <div className="relative min-h-screen w-full flex items-start justify-center px-3.5 pb-6 pt-[76px] z-10">
@@ -217,7 +227,7 @@ const ResultScreen = ({
                     <span>{levelInfo.label} · {isSingle ? 'SOLO' : 'DUEL'}</span>
                 </div>
 
-                {/* ===== RANK BANNER ===== */}
+                {/* Rank banner */}
                 {metrics && (() => {
                     const r = metrics.rank
                     const RankIcon = r.Icon
@@ -226,7 +236,6 @@ const ResultScreen = ({
                             <div className={`w-11 h-11 rounded-xl grid place-items-center shrink-0 bg-slate-950/50 border ${r.border}`}>
                                 <RankIcon size={22} strokeWidth={2.4} className={r.iconColor} />
                             </div>
-
                             <div className="flex-1 min-w-0 text-left">
                                 <div className="flex items-center gap-1.5 mb-0.5">
                                     <Award size={10} className={r.iconColor} strokeWidth={3} />
@@ -238,7 +247,6 @@ const ResultScreen = ({
                                     {r.title}
                                 </div>
                             </div>
-
                             <div className={`hidden sm:flex items-center gap-1 px-2.5 py-1 rounded-lg border ${r.badge}`}>
                                 <TrendingUp size={10} strokeWidth={3} />
                                 <span className="text-[9px] font-black tracking-wider uppercase">
@@ -249,12 +257,13 @@ const ResultScreen = ({
                     )
                 })()}
 
-                {/* Tabs */}
-                <div className="w-full grid grid-cols-3 gap-1.5 mt-1">
+                {/* Tabs — 4 tabs now */}
+                <div className="w-full grid grid-cols-4 gap-1.5 mt-1">
                     {[
                         { id: 'summary', label: 'Summary', Icon: BarChart3 },
                         { id: 'rounds', label: 'Rounds', Icon: TrendingUp },
                         { id: 'stats', label: 'Stats', Icon: Brain },
+                        { id: 'review', label: 'Review', Icon: BookOpen },
                     ].map((t) => {
                         const active = tab === t.id
                         const Icon = t.Icon
@@ -263,12 +272,12 @@ const ResultScreen = ({
                                 key={t.id}
                                 type="button"
                                 onClick={() => setTab(t.id)}
-                                className={`flex items-center justify-center gap-1.5 px-2 py-2 rounded-xl text-[10px] font-black tracking-wider transition-all ${active
-                                    ? 'bg-gradient-to-br from-violet-500 to-pink-500 text-white shadow-[0_4px_14px_rgba(139,92,246,0.45)]'
-                                    : 'bg-slate-800/50 border border-slate-500/15 text-slate-400 hover:border-slate-400/30'
+                                className={`flex items-center justify-center gap-1 px-1.5 py-2 rounded-xl text-[9px] font-black tracking-wider transition-all ${active
+                                        ? 'bg-gradient-to-br from-violet-500 to-pink-500 text-white shadow-[0_4px_14px_rgba(139,92,246,0.45)]'
+                                        : 'bg-slate-800/50 border border-slate-500/15 text-slate-400 hover:border-slate-400/30'
                                     }`}
                             >
-                                <Icon size={12} strokeWidth={2.8} />
+                                <Icon size={11} strokeWidth={2.8} />
                                 <span>{t.label}</span>
                             </button>
                         )
@@ -412,6 +421,187 @@ const ResultScreen = ({
                                 </>
                             )}
                         </div>
+                    </div>
+                )}
+
+                {/* ============= REVIEW TAB ============= */}
+                {tab === 'review' && (
+                    <div className="w-full bg-gradient-to-b from-slate-900/90 to-slate-950/85 backdrop-blur-xl rounded-2xl p-4 border border-violet-500/30 shadow-[0_18px_44px_rgba(0,0,0,0.5)]">
+                        <div className="flex items-center gap-2 mb-3">
+                            <BookOpen size={14} className="text-amber-400" strokeWidth={2.8} />
+                            <span className="text-[10px] font-black tracking-[1.6px] text-slate-400">ANSWER REVIEW</span>
+                        </div>
+
+                        {/* Filter pills */}
+                        <div className="flex gap-1.5 mb-3">
+                            {[
+                                { id: 'wrong', label: 'Wrong', Icon: XCircle },
+                                { id: 'skipped', label: 'Skipped', Icon: Clock },
+                                { id: 'all', label: 'All', Icon: HelpCircle },
+                            ].map((f) => {
+                                const active = reviewFilter === f.id
+                                const Icon = f.Icon
+                                return (
+                                    <button
+                                        key={f.id}
+                                        type="button"
+                                        onClick={() => setReviewFilter(f.id)}
+                                        className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-[9px] font-black tracking-wider uppercase transition-all ${active
+                                                ? 'bg-gradient-to-br from-amber-500 to-pink-500 text-white shadow-[0_2px_10px_rgba(251,191,36,0.35)]'
+                                                : 'bg-slate-800/60 border border-slate-500/20 text-slate-400 hover:border-slate-400/40'
+                                            }`}
+                                    >
+                                        <Icon size={10} strokeWidth={3} />
+                                        <span>{f.label}</span>
+                                    </button>
+                                )
+                            })}
+                        </div>
+
+                        {/* Question list */}
+                        {(() => {
+                            const filtered = answerLog.filter((a) => {
+                                if (reviewFilter === 'wrong') return a.status === 'wrong'
+                                if (reviewFilter === 'skipped') return a.status === 'skipped'
+                                return true
+                            })
+
+                            if (filtered.length === 0) {
+                                return (
+                                    <div className="flex flex-col items-center gap-2 py-8">
+                                        <HelpCircle size={28} className="text-slate-600" strokeWidth={2.2} />
+                                        <span className="text-[11px] text-slate-500 font-bold">
+                                            {reviewFilter === 'wrong' ? 'No wrong answers — great job!' :
+                                                reviewFilter === 'skipped' ? 'No skipped questions!' :
+                                                    'No questions logged'}
+                                        </span>
+                                    </div>
+                                )
+                            }
+
+                            return (
+                                <div className="flex flex-col gap-2 max-h-[440px] overflow-y-auto pr-1">
+                                    {filtered.map((item, i) => {
+                                        const id = `${item.round}-${i}`
+                                        const isOpen = expandedId === id
+                                        const meta = CATEGORY_META[item.category] || CATEGORY_META.arithmetic
+                                        const CatIcon = meta.Icon
+                                        const hasExplanation = !!explanationCache[id]
+                                        const isLoadingExpl = loadingId === id
+
+                                        return (
+                                            <div
+                                                key={id}
+                                                className={`rounded-xl border ${item.status === 'wrong'
+                                                        ? 'border-red-500/40 bg-red-500/5'
+                                                        : 'border-amber-500/40 bg-amber-500/5'
+                                                    }`}
+                                            >
+                                                {/* Header */}
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setExpandedId(isOpen ? null : id)}
+                                                    className="w-full flex items-start gap-2 p-2.5 text-left"
+                                                >
+                                                    <div className={`w-7 h-7 rounded-lg grid place-items-center shrink-0 ${meta.bg} ${meta.border} border`}>
+                                                        <CatIcon size={13} className={meta.color} strokeWidth={2.6} />
+                                                    </div>
+                                                    <div className="flex-1 min-w-0">
+                                                        <div className="flex items-center gap-1.5 mb-0.5 flex-wrap">
+                                                            <span className={`text-[9px] font-black tracking-wider uppercase ${item.status === 'wrong' ? 'text-red-400' : 'text-amber-400'}`}>
+                                                                {item.status === 'wrong' ? 'WRONG' : 'SKIPPED'}
+                                                            </span>
+                                                            <span className="text-[9px] text-slate-500 font-bold tracking-wide">
+                                                                · Round {item.round} · {meta.label}
+                                                            </span>
+                                                        </div>
+                                                        <p className={`text-[11px] font-bold text-slate-300 leading-snug ${isOpen ? '' : 'line-clamp-2'}`}>
+                                                            {item.question}
+                                                        </p>
+                                                    </div>
+                                                    <div className="shrink-0 mt-0.5">
+                                                        {isOpen
+                                                            ? <ChevronUp size={14} className="text-slate-400" strokeWidth={2.8} />
+                                                            : <ChevronDown size={14} className="text-slate-400" strokeWidth={2.8} />}
+                                                    </div>
+                                                </button>
+
+                                                {/* Expanded body */}
+                                                {isOpen && (
+                                                    <div className="px-2.5 pb-3 flex flex-col gap-2">
+                                                        <div className="flex flex-col gap-1.5 p-2 rounded-lg bg-slate-950/60 border border-slate-500/15">
+                                                            <div className="flex items-start gap-2">
+                                                                <span className="text-[9px] font-black tracking-wider text-slate-500 uppercase pt-0.5 shrink-0 w-14">
+                                                                    Correct
+                                                                </span>
+                                                                <span className="text-[11px] font-extrabold text-green-400 break-words">
+                                                                    {item.correct}
+                                                                </span>
+                                                            </div>
+                                                            <div className="flex items-start gap-2">
+                                                                <span className="text-[9px] font-black tracking-wider text-slate-500 uppercase pt-0.5 shrink-0 w-14">
+                                                                    {item.player === 2 ? player2Name : (item.player === 1 ? player1Name : 'Chosen')}
+                                                                </span>
+                                                                <span className={`text-[11px] font-extrabold break-words ${item.status === 'skipped' ? 'text-amber-400 italic' : 'text-red-400'
+                                                                    }`}>
+                                                                    {item.status === 'skipped' ? 'Not attempted (timeout)' : item.chosen}
+                                                                </span>
+                                                            </div>
+                                                        </div>
+
+                                                        {hasExplanation ? (
+                                                            <div className="p-2 rounded-lg bg-violet-500/10 border border-violet-500/30">
+                                                                <div className="flex items-center gap-1 mb-1">
+                                                                    <Brain size={10} className="text-violet-300" strokeWidth={3} />
+                                                                    <span className="text-[9px] font-black tracking-wider uppercase text-violet-300">
+                                                                        Explanation
+                                                                    </span>
+                                                                </div>
+                                                                <p className="text-[11px] text-slate-300 leading-relaxed">
+                                                                    {explanationCache[id]}
+                                                                </p>
+                                                            </div>
+                                                        ) : (
+                                                            <button
+                                                                type="button"
+                                                                onClick={async () => {
+                                                                    setLoadingId(id)
+                                                                    const exp = await generateExplanation(
+                                                                        item.category,
+                                                                        item.question,
+                                                                        item.correct,
+                                                                        item.chosen
+                                                                    )
+                                                                    setExplanationCache((c) => ({
+                                                                        ...c,
+                                                                        [id]: exp || 'No explanation available.',
+                                                                    }))
+                                                                    setLoadingId(null)
+                                                                }}
+                                                                disabled={isLoadingExpl}
+                                                                className="flex items-center justify-center gap-1.5 py-2 text-[10px] font-black tracking-wider uppercase text-violet-200 bg-violet-500/15 border border-violet-500/40 rounded-lg cursor-pointer transition-all hover:bg-violet-500/25 disabled:opacity-60"
+                                                            >
+                                                                {isLoadingExpl ? (
+                                                                    <>
+                                                                        <Loader2 size={11} className="animate-spin" strokeWidth={3} />
+                                                                        <span>Getting explanation…</span>
+                                                                    </>
+                                                                ) : (
+                                                                    <>
+                                                                        <Lightbulb size={11} strokeWidth={3} />
+                                                                        <span>Show Explanation</span>
+                                                                    </>
+                                                                )}
+                                                            </button>
+                                                        )}
+                                                    </div>
+                                                )}
+                                            </div>
+                                        )
+                                    })}
+                                </div>
+                            )
+                        })()}
                     </div>
                 )}
 

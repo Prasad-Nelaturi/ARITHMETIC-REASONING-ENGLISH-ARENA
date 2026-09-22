@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { Crown, Swords } from 'lucide-react'
 
-const ScoreBoard = ({ p1Name, p2Name, p1Score, p2Score, round, total = 5, mode = 'double' }) => {
+const ScoreBoard = ({ p1Name, p2Name, p1Score, p2Score, round, total = 3, mode = 'double' }) => {
     const prev = useRef({ p1: p1Score, p2: p2Score })
     const [delta, setDelta] = useState({ p1: 0, p2: 0 })
     const isSingle = mode === 'single'

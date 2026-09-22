@@ -1,6 +1,7 @@
 /**
  * Pure AI question generator — Google Gemini.
  * No static fallbacks. Retries on failure.
+ * Anti-repeat: passes previously asked questions back to the AI.
  */
 
 const PROVIDER = import.meta.env.VITE_AI_PROVIDER || 'gemini'
@@ -30,14 +31,27 @@ Use words appropriate to the difficulty level.
 `,
 }
 
-const buildPrompt = (category, level, count) => {
+/* =========================================================
+   NEW: build a "do not repeat" block from previous questions
+   ========================================================= */
+const buildAvoidList = (avoidQuestions = []) => {
+    if (!avoidQuestions.length) return ''
+    // Only include the first 100 chars of each to keep the prompt small
+    const trimmed = avoidQuestions
+        .slice(-30)                                   // keep last 30 to stay under token limits
+        .map((q, i) => `${i + 1}. ${String(q).slice(0, 100)}`)
+        .join('\n')
+    return `\n\nDO NOT REPEAT — the following questions have ALREADY been asked in this session. Do not generate any question that is the same, similar, or uses the same numbers/words:\n${trimmed}\n`
+}
+
+const buildPrompt = (category, level, count, avoidQuestions = []) => {
     return `You are a question generator for competitive bank exams. Return ONLY valid JSON, no markdown, no explanation.
 
 ${CATEGORY_GUIDE[category]}
 
 Difficulty: ${level.toUpperCase()}
 ${DIFFICULTY[level]}
-
+${buildAvoidList(avoidQuestions)}
 Generate EXACTLY ${count} unique questions as a JSON array with this exact schema:
 [
   {
@@ -54,9 +68,11 @@ STRICT RULES:
 3. All 4 options must be unique (no duplicates).
 4. "correct" must match one of the 4 options exactly.
 5. No two questions may repeat the same numbers, words, or structure.
-6. Do not wrap the response in markdown code fences.
-7. Do not add any text before or after the JSON array.
-8. If a value is a number, still return it as a string in "correct" and "options".
+6. Every question must be DIFFERENT from the ones listed in the DO NOT REPEAT section above.
+7. Vary the numbers significantly — do not use the same values across questions.
+8. Do not wrap the response in markdown code fences.
+9. Do not add any text before or after the JSON array.
+10. If a value is a number, still return it as a string in "correct" and "options".
 
 Output the raw JSON array now.`
 }
@@ -78,8 +94,9 @@ const callGemini = async (prompt, retries = 3) => {
                 body: JSON.stringify({
                     contents: [{ parts: [{ text: prompt }] }],
                     generationConfig: {
-                        temperature: 1.0,
+                        temperature: 1.1,               // 🔥 slightly higher = more variety
                         topP: 0.95,
+                        topK: 40,
                         maxOutputTokens: 8192,
                         responseMimeType: 'application/json',
                     },
@@ -87,8 +104,8 @@ const callGemini = async (prompt, retries = 3) => {
             })
 
             if (res.status === 429) {
-                // Rate limit — wait and retry
-                await new Promise((r) => setTimeout(r, 1500 * (attempt + 1)))
+                const retryAfter = Number(res.headers.get('Retry-After')) || 30
+                await new Promise((r) => setTimeout(r, retryAfter * 1000))
                 lastError = new Error('Rate limited (429)')
                 continue
             }
@@ -110,18 +127,22 @@ const callGemini = async (prompt, retries = 3) => {
     throw lastError || new Error('Gemini failed after retries')
 }
 
+const normalizeQuestion = (str) =>
+    String(str || '')
+        .toLowerCase()
+        .replace(/\s+/g, ' ')
+        .replace(/[^\w\s]/g, '')
+        .trim()
+
 const parseAIResponse = (raw) => {
     if (!raw) throw new Error('Empty AI response')
     let text = String(raw).trim()
-
-    // Strip any markdown fences
     text = text.replace(/^```(?:json)?/i, '').replace(/```$/i, '').trim()
 
     let parsed
     try {
         parsed = JSON.parse(text)
     } catch {
-        // Find first [ ... ] block
         const s = text.indexOf('[')
         const e = text.lastIndexOf(']')
         if (s === -1 || e === -1) throw new Error('AI response has no JSON array')
@@ -132,7 +153,6 @@ const parseAIResponse = (raw) => {
         }
     }
 
-    // Unwrap if AI returned { questions: [...] }
     if (parsed && !Array.isArray(parsed) && Array.isArray(parsed.questions)) {
         parsed = parsed.questions
     }
@@ -148,11 +168,9 @@ const parseAIResponse = (raw) => {
             Array.isArray(q.options) &&
             q.options.length >= 2
         ) {
-            // Dedupe options, ensure correct is present
             const optsRaw = [String(q.correct), ...q.options.map(String)]
             const opts = [...new Set(optsRaw)]
 
-            // Pad to exactly 4 if AI returned fewer
             let pad = 1
             while (opts.length < 4) {
                 const candidate = `Option${pad}`
@@ -175,26 +193,111 @@ const parseAIResponse = (raw) => {
 
 export const isAIConfigured = () => !!GEMINI_KEY
 
+/* =========================================================
+   NEW: sessions memory — keeps asked questions across calls
+   ========================================================= */
+const askedQuestions = new Set()
+const askedNormalized = new Set()
+
+export const resetAIHistory = () => {
+    askedQuestions.clear()
+    askedNormalized.clear()
+}
+
+/* =========================================================
+   ANSWER REVIEW — generate a short explanation for wrong/skipped
+   ========================================================= */
+export const generateExplanation = async (category, question, correct, chosen = null) => {
+    if (!GEMINI_KEY) return ''
+
+    const prompt = `You are a helpful exam tutor. Give a SHORT explanation (2-3 sentences, no markdown) for the following bank-exam question.
+
+Category: ${category}
+Question: ${question}
+Correct answer: ${correct}
+${chosen ? `Student chose: ${chosen} (this is wrong)` : 'Student did not attempt this question.'}
+
+Explain briefly:
+1. Why the correct answer is right
+2. (If wrong answer given) The likely mistake
+
+Return plain text only, no JSON, no markdown, no bullet points. Maximum 3 sentences.`
+
+    try {
+        const url = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent'
+        const res = await fetch(url, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'x-goog-api-key': GEMINI_KEY,
+            },
+            body: JSON.stringify({
+                contents: [{ parts: [{ text: prompt }] }],
+                generationConfig: {
+                    temperature: 0.7,
+                    maxOutputTokens: 250,
+                },
+            }),
+        })
+        if (!res.ok) return ''
+        const data = await res.json()
+        const text = data?.candidates?.[0]?.content?.parts?.[0]?.text
+        return text ? String(text).trim() : ''
+    } catch {
+        return ''
+    }
+}
+
 export const generateWithAI = async (category, level, count = 10) => {
     if (!GEMINI_KEY) {
         throw new Error('Gemini API key missing. Add VITE_GEMINI_API_KEY to .env')
     }
-    const prompt = buildPrompt(category, level, count)
-    const raw = await callGemini(prompt)
-    const questions = parseAIResponse(raw)
 
+    // Pass the last N questions we've already returned to the AI
+    const avoidList = Array.from(askedQuestions).slice(-40)
+
+    const prompt = buildPrompt(category, level, count, avoidList)
+    const raw = await callGemini(prompt)
+    let questions = parseAIResponse(raw)
+
+    // 🔍 Local dedupe against everything we've already served this session
+    questions = questions.filter((q) => {
+        const norm = normalizeQuestion(q.question)
+        if (askedNormalized.has(norm)) return false
+        askedNormalized.add(norm)
+        return true
+    })
+
+    // If short, ask once more for the missing ones
     if (questions.length < count) {
-        // Ask for the missing ones
         const needed = count - questions.length
         try {
-            const secondPrompt = buildPrompt(category, level, needed)
+            const secondPrompt = buildPrompt(
+                category,
+                level,
+                needed + 2,   // ask for a couple more to be safe
+                Array.from(askedQuestions).slice(-40)
+            )
             const raw2 = await callGemini(secondPrompt)
-            const more = parseAIResponse(raw2)
-            questions.push(...more.slice(0, needed))
+            let more = parseAIResponse(raw2)
+            more = more.filter((q) => {
+                const norm = normalizeQuestion(q.question)
+                if (askedNormalized.has(norm)) return false
+                askedNormalized.add(norm)
+                return true
+            })
+            questions.push(...more)
         } catch {
-            // ignore — accept fewer
+            // ignore
         }
     }
 
-    return questions.slice(0, count)
+    const final = questions.slice(0, count)
+
+    // Record them so the next call avoids these
+    final.forEach((q) => {
+        askedQuestions.add(q.question)
+    })
+
+    return final
 }

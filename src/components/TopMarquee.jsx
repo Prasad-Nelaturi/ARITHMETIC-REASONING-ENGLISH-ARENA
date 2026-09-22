@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import { Code2, Heart, Home, AlertTriangle, X } from 'lucide-react'
+import { Code2, Home, AlertTriangle, X, Phone } from 'lucide-react'
 import { useLocation, useNavigate } from 'react-router-dom'
 
 const TopMarquee = () => {
@@ -57,12 +57,21 @@ const TopMarquee = () => {
                         </span>
                     </div>
 
-                    {/* ===== RIGHT: Version + Heart ===== */}
+                    {/* ===== RIGHT: Version + Phone (clickable → portfolio) ===== */}
                     <div className="flex items-center gap-1.5 pl-3 border-l border-pink-500/30">
                         <span className="hidden sm:inline text-[10px] font-black tracking-[1.6px] uppercase text-pink-200/90">
                             v1.0
                         </span>
-                        <Heart size={12} strokeWidth={2.8} fill="#f9a8d4" className="text-pink-300" />
+                        <a
+                            href="https://hireme-pn.netlify.app/"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            title="Contact Prasad Nelaturi"
+                            aria-label="Contact Prasad Nelaturi — open portfolio"
+                            className="flex items-center justify-center w-6 h-6 rounded-md bg-pink-500/15 border border-pink-500/40 hover:bg-pink-500/30 hover:border-pink-400/70 transition-all touch-manipulation active:scale-95 cursor-pointer"
+                        >
+                            <Phone size={12} strokeWidth={2.8} className="text-pink-300" />
+                        </a>
                     </div>
                 </div>
             </div>

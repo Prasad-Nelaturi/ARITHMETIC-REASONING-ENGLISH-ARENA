@@ -34,8 +34,7 @@ const ArithmeticChallenge = ({
         advanceLockRef.current = false
         setLocked(false)
         setFeedback(null)
-
-        onQuestionReady?.(() => skipQuestion())
+        onQuestionReady?.(() => skipQuestion(), questions[idx])
     }, [questions, idx])
 
     const skipQuestion = useCallback(() => {
@@ -86,7 +85,7 @@ const ArithmeticChallenge = ({
 
         const correct = String(value) === String(q.correct)
         setFeedback({ player, correct, correctValue: q.correct })
-        onAnswer?.(player, correct)
+        onAnswer?.(player, correct, value)
 
         if (correct) {
             setCorrectCount((c) => ({ ...c, [player]: c[player] + 1 }))

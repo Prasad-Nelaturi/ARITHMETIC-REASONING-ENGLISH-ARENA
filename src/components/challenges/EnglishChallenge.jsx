@@ -34,7 +34,7 @@ const EnglishChallenge = ({
         advanceLockRef.current = false
         setLocked(false)
         setFeedback(null)
-        onQuestionReady?.(() => skipQuestion())
+        onQuestionReady?.(() => skipQuestion(), questions[idx])
     }, [questions, idx])
 
     const skipQuestion = useCallback(() => {
@@ -85,7 +85,7 @@ const EnglishChallenge = ({
 
         const correct = String(value) === String(q.correct)
         setFeedback({ player, correct, correctValue: q.correct })
-        onAnswer?.(player, correct)
+        onAnswer?.(player, correct, value)
 
         if (correct) {
             setCorrectCount((c) => ({ ...c, [player]: c[player] + 1 }))
@@ -110,8 +110,8 @@ const EnglishChallenge = ({
             <div
                 key={player}
                 className={`flex flex-col gap-2 p-2.5 bg-slate-950/50 rounded-[14px] border ${isP1
-                    ? 'border-blue-500/35 shadow-[inset_0_0_0_1px_rgba(59,130,246,0.13),0_6px_24px_rgba(59,130,246,0.09)]'
-                    : 'border-pink-500/35 shadow-[inset_0_0_0_1px_rgba(236,72,153,0.13),0_6px_24px_rgba(236,72,153,0.09)]'
+                        ? 'border-blue-500/35 shadow-[inset_0_0_0_1px_rgba(59,130,246,0.13),0_6px_24px_rgba(59,130,246,0.09)]'
+                        : 'border-pink-500/35 shadow-[inset_0_0_0_1px_rgba(236,72,153,0.13),0_6px_24px_rgba(236,72,153,0.09)]'
                     } ${isSingle ? 'col-span-full' : ''}`}
             >
                 <div className="flex items-center justify-between gap-1">
@@ -142,10 +142,10 @@ const EnglishChallenge = ({
                                 onPointerDown={(e) => handleAnswer(player, opt, e)}
                                 disabled={locked}
                                 className={`px-2 py-2.5 text-[clamp(10px,2.9vw,13px)] font-extrabold text-white rounded-[10px] cursor-pointer transition-all duration-150 touch-manipulation break-words leading-tight text-left ${showCorrect
-                                    ? 'bg-gradient-to-br from-green-500 to-green-700 shadow-[0_0_0_2px_#22c55e,0_0_24px_rgba(34,197,94,0.55)] scale-[1.02]'
-                                    : showWrong
-                                        ? 'bg-gradient-to-br from-red-500 to-red-700 shadow-[0_0_0_2px_#ef4444,0_0_24px_rgba(239,68,68,0.55)] scale-[1.02]'
-                                        : `${baseGrad} ${locked && !isMine ? 'opacity-35' : ''}`
+                                        ? 'bg-gradient-to-br from-green-500 to-green-700 shadow-[0_0_0_2px_#22c55e,0_0_24px_rgba(34,197,94,0.55)] scale-[1.02]'
+                                        : showWrong
+                                            ? 'bg-gradient-to-br from-red-500 to-red-700 shadow-[0_0_0_2px_#ef4444,0_0_24px_rgba(239,68,68,0.55)] scale-[1.02]'
+                                            : `${baseGrad} ${locked && !isMine ? 'opacity-35' : ''}`
                                     }`}
                             >
                                 {opt}
@@ -165,10 +165,10 @@ const EnglishChallenge = ({
                         <span
                             key={i}
                             className={`w-[7px] h-[7px] rounded-full transition-all duration-250 ${i < idx
-                                ? 'bg-gradient-to-br from-green-500 to-green-400'
-                                : i === idx
-                                    ? 'bg-gradient-to-br from-blue-500 to-violet-500 shadow-[0_0_10px_rgba(96,165,250,0.8)] scale-150'
-                                    : 'bg-slate-500/20'
+                                    ? 'bg-gradient-to-br from-green-500 to-green-400'
+                                    : i === idx
+                                        ? 'bg-gradient-to-br from-blue-500 to-violet-500 shadow-[0_0_10px_rgba(96,165,250,0.8)] scale-150'
+                                        : 'bg-slate-500/20'
                                 }`}
                         />
                     ))}

@@ -29,8 +29,8 @@ const CATEGORIES = [
 const StartScreen = ({ onStart }) => {
     const [mode, setMode] = useState('single')
     const [category, setCategory] = useState('mixed')
-    const [p1, setP1] = useState('')
-    const [p2, setP2] = useState('')
+    const [p1, setP1] = useState('PRASAD NELATURI')
+    const [p2, setP2] = useState('CHANTI NELATURI')
     const [level, setLevel] = useState('easy')
     const [timer, setTimer] = useState(30)
     const [error, setError] = useState('')
@@ -72,7 +72,7 @@ const StartScreen = ({ onStart }) => {
                     <div className="w-px h-3 bg-slate-500/20" />
                     <div className="flex items-center gap-1.5">
                         <Trophy size={13} className="text-violet-500" strokeWidth={2.6} />
-                        <span className="text-[9px] font-extrabold tracking-[1.2px] text-slate-300">5 ROUNDS</span>
+                        <span className="text-[9px] font-extrabold tracking-[1.2px] text-slate-300">3 ROUNDS</span>
                     </div>
                 </div>
 
