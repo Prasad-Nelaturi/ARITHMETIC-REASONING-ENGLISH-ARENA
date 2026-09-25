@@ -1,7 +1,9 @@
 /**
- * Pure AI question generator — Google Gemini.
+ * Pure AI question generator — Google Gemini 3.5 Flash-Lite.
  * No static fallbacks. Retries on failure.
  * Anti-repeat: passes previously asked questions back to the AI.
+ * Robust JSON extractor handles: markdown fences, preamble text,
+ * trailing commas, truncated arrays, and auto-repair.
  */
 
 const PROVIDER = import.meta.env.VITE_AI_PROVIDER || 'gemini'
@@ -32,51 +34,99 @@ Use words appropriate to the difficulty level.
 }
 
 /* =========================================================
-   NEW: build a "do not repeat" block from previous questions
+   ROBUST JSON EXTRACTOR
+   Handles: markdown fences, extra text before/after, truncated
+   arrays, smart quotes, trailing commas, etc.
+   ========================================================= */
+const extractJSON = (raw, expect = 'object') => {
+    if (!raw) throw new Error('Empty AI response')
+
+    let text = String(raw).trim()
+
+    // 1) Strip markdown fences (anywhere)
+    text = text
+        .replace(/```json\s*/gi, '')
+        .replace(/```\s*/g, '')
+        .trim()
+
+    // 2) Remove common preamble like "Here is the JSON:"
+    text = text.replace(/^[^{[]*?(?=[{\[])/, '').trim()
+
+    const openingChar = expect === 'array' ? '[' : '{'
+    const closingChar = expect === 'array' ? ']' : '}'
+
+    // 3) First attempt: direct parse
+    try {
+        return JSON.parse(text)
+    } catch { /* continue */ }
+
+    // 4) Slice from first opening char to last closing char
+    const firstOpen = text.indexOf(openingChar)
+    const lastClose = text.lastIndexOf(closingChar)
+    if (firstOpen !== -1 && lastClose !== -1 && lastClose > firstOpen) {
+        let sliced = text.slice(firstOpen, lastClose + 1)
+
+        // 4a) Remove trailing commas before ] or }
+        sliced = sliced.replace(/,\s*([\]}])/g, '$1')
+
+        try {
+            return JSON.parse(sliced)
+        } catch { /* continue */ }
+
+        // 4b) Auto-close truncated arrays
+        if (expect === 'array') {
+            const open = (sliced.match(/\[/g) || []).length
+            const close = (sliced.match(/\]/g) || []).length
+            if (open > close) {
+                const lastBrace = sliced.lastIndexOf('}')
+                if (lastBrace !== -1) {
+                    sliced = sliced.slice(0, lastBrace + 1) + ']'
+                    try {
+                        return JSON.parse(sliced)
+                    } catch { /* continue */ }
+                }
+            }
+        }
+    }
+
+    // 5) Fallback: attempt to find any valid JSON substring
+    const match = text.match(expect === 'array' ? /\[[\s\S]*\]/ : /\{[\s\S]*\}/)
+    if (match) {
+        try {
+            return JSON.parse(match[0].replace(/,\s*([\]}])/g, '$1'))
+        } catch { /* continue */ }
+    }
+
+    throw new Error(
+        `AI response could not be parsed as ${expect}. First 200 chars: ${text.slice(0, 200)}`
+    )
+}
+
+/* =========================================================
+   SHARED PROMPT PIECES
    ========================================================= */
 const buildAvoidList = (avoidQuestions = []) => {
     if (!avoidQuestions.length) return ''
-    // Only include the first 100 chars of each to keep the prompt small
     const trimmed = avoidQuestions
-        .slice(-30)                                   // keep last 30 to stay under token limits
+        .slice(-30)
         .map((q, i) => `${i + 1}. ${String(q).slice(0, 100)}`)
         .join('\n')
     return `\n\nDO NOT REPEAT — the following questions have ALREADY been asked in this session. Do not generate any question that is the same, similar, or uses the same numbers/words:\n${trimmed}\n`
 }
 
-const buildPrompt = (category, level, count, avoidQuestions = []) => {
-    return `You are a question generator for competitive bank exams. Return ONLY valid JSON, no markdown, no explanation.
+const STRICT_JSON_TAIL = `
 
-${CATEGORY_GUIDE[category]}
+ABSOLUTE REQUIREMENTS:
+1. Response must START with the opening character and END with the closing character.
+2. No markdown, no code fences, no triple backticks, no text before or after.
+3. No trailing commas. Use standard double quotes for all strings.
+4. Return the raw JSON only.
 
-Difficulty: ${level.toUpperCase()}
-${DIFFICULTY[level]}
-${buildAvoidList(avoidQuestions)}
-Generate EXACTLY ${count} unique questions as a JSON array with this exact schema:
-[
-  {
-    "topic": "short topic label like 'Percentage' or 'Idioms'",
-    "question": "the full question text",
-    "correct": "the correct answer as a string",
-    "options": ["option A", "option B", "option C", "option D"]
-  }
-]
+Output the raw JSON now.`
 
-STRICT RULES:
-1. Return exactly ${count} objects.
-2. Every question must have exactly 4 options.
-3. All 4 options must be unique (no duplicates).
-4. "correct" must match one of the 4 options exactly.
-5. No two questions may repeat the same numbers, words, or structure.
-6. Every question must be DIFFERENT from the ones listed in the DO NOT REPEAT section above.
-7. Vary the numbers significantly — do not use the same values across questions.
-8. Do not wrap the response in markdown code fences.
-9. Do not add any text before or after the JSON array.
-10. If a value is a number, still return it as a string in "correct" and "options".
-
-Output the raw JSON array now.`
-}
-
+/* =========================================================
+   CALL GEMINI (network layer)
+   ========================================================= */
 const callGemini = async (prompt, retries = 3) => {
     if (!GEMINI_KEY) throw new Error('Gemini API key missing — check .env')
 
@@ -94,7 +144,7 @@ const callGemini = async (prompt, retries = 3) => {
                 body: JSON.stringify({
                     contents: [{ parts: [{ text: prompt }] }],
                     generationConfig: {
-                        temperature: 1.1,               // 🔥 slightly higher = more variety
+                        temperature: 1.1,
                         topP: 0.95,
                         topK: 40,
                         maxOutputTokens: 8192,
@@ -134,28 +184,44 @@ const normalizeQuestion = (str) =>
         .replace(/[^\w\s]/g, '')
         .trim()
 
+/* =========================================================
+   CATEGORY BATCH (arithmetic / reasoning / english)
+   ========================================================= */
+const buildBatchPrompt = (category, level, count, avoidQuestions = []) => {
+    return `You are a question generator for competitive bank exams. Return ONLY valid JSON, no markdown, no explanation.
+
+${CATEGORY_GUIDE[category]}
+
+Difficulty: ${level.toUpperCase()}
+${DIFFICULTY[level]}
+${buildAvoidList(avoidQuestions)}
+Generate EXACTLY ${count} unique questions as a JSON array with this exact schema:
+[
+  {
+    "topic": "short topic label like 'Percentage' or 'Idioms'",
+    "question": "the full question text",
+    "correct": "the correct answer as a string",
+    "options": ["option A", "option B", "option C", "option D"]
+  }
+]
+
+STRICT RULES:
+1. Return exactly ${count} objects.
+2. Every question must have exactly 4 options.
+3. All 4 options must be unique (no duplicates).
+4. "correct" must match one of the 4 options exactly.
+5. No two questions may repeat the same numbers, words, or structure.
+6. Every question must be DIFFERENT from the ones listed in the DO NOT REPEAT section above.
+7. Vary the numbers significantly — do not use the same values across questions.
+8. Do not wrap the response in markdown code fences.
+9. Do not add any text before or after the JSON array.
+10. If a value is a number, still return it as a string in "correct" and "options".
+
+Output the raw JSON array now.`
+}
+
 const parseAIResponse = (raw) => {
-    if (!raw) throw new Error('Empty AI response')
-    let text = String(raw).trim()
-    text = text.replace(/^```(?:json)?/i, '').replace(/```$/i, '').trim()
-
-    let parsed
-    try {
-        parsed = JSON.parse(text)
-    } catch {
-        const s = text.indexOf('[')
-        const e = text.lastIndexOf(']')
-        if (s === -1 || e === -1) throw new Error('AI response has no JSON array')
-        try {
-            parsed = JSON.parse(text.slice(s, e + 1))
-        } catch (err) {
-            throw new Error('AI returned malformed JSON')
-        }
-    }
-
-    if (parsed && !Array.isArray(parsed) && Array.isArray(parsed.questions)) {
-        parsed = parsed.questions
-    }
+    const parsed = extractJSON(raw, 'array')
     if (!Array.isArray(parsed)) throw new Error('AI response is not an array')
 
     const out = []
@@ -170,14 +236,12 @@ const parseAIResponse = (raw) => {
         ) {
             const optsRaw = [String(q.correct), ...q.options.map(String)]
             const opts = [...new Set(optsRaw)]
-
             let pad = 1
             while (opts.length < 4) {
                 const candidate = `Option${pad}`
                 if (!opts.includes(candidate)) opts.push(candidate)
                 pad++
             }
-
             out.push({
                 topic: String(q.topic || 'General'),
                 question: String(q.question),
@@ -191,10 +255,8 @@ const parseAIResponse = (raw) => {
     return out
 }
 
-export const isAIConfigured = () => !!GEMINI_KEY
-
 /* =========================================================
-   NEW: sessions memory — keeps asked questions across calls
+   SESSION MEMORY (prevents repeats)
    ========================================================= */
 const askedQuestions = new Set()
 const askedNormalized = new Set()
@@ -204,8 +266,53 @@ export const resetAIHistory = () => {
     askedNormalized.clear()
 }
 
+export const isAIConfigured = () => !!GEMINI_KEY
+
+export const generateWithAI = async (category, level, count = 10) => {
+    if (!GEMINI_KEY) {
+        throw new Error('Gemini API key missing. Add VITE_GEMINI_API_KEY to .env')
+    }
+
+    const avoidList = Array.from(askedQuestions).slice(-40)
+    const prompt = buildBatchPrompt(category, level, count, avoidList)
+    const raw = await callGemini(prompt)
+    let questions = parseAIResponse(raw)
+
+    questions = questions.filter((q) => {
+        const norm = normalizeQuestion(q.question)
+        if (askedNormalized.has(norm)) return false
+        askedNormalized.add(norm)
+        return true
+    })
+
+    if (questions.length < count) {
+        const needed = count - questions.length
+        try {
+            const secondPrompt = buildBatchPrompt(
+                category,
+                level,
+                needed + 2,
+                Array.from(askedQuestions).slice(-40)
+            )
+            const raw2 = await callGemini(secondPrompt)
+            let more = parseAIResponse(raw2)
+            more = more.filter((q) => {
+                const norm = normalizeQuestion(q.question)
+                if (askedNormalized.has(norm)) return false
+                askedNormalized.add(norm)
+                return true
+            })
+            questions.push(...more)
+        } catch { /* ignore */ }
+    }
+
+    const final = questions.slice(0, count)
+    final.forEach((q) => { askedQuestions.add(q.question) })
+    return final
+}
+
 /* =========================================================
-   ANSWER REVIEW — generate a short explanation for wrong/skipped
+   ANSWER REVIEW — short explanation for wrong/skipped
    ========================================================= */
 export const generateExplanation = async (category, question, correct, chosen = null) => {
     if (!GEMINI_KEY) return ''
@@ -233,10 +340,7 @@ Return plain text only, no JSON, no markdown, no bullet points. Maximum 3 senten
             },
             body: JSON.stringify({
                 contents: [{ parts: [{ text: prompt }] }],
-                generationConfig: {
-                    temperature: 0.7,
-                    maxOutputTokens: 250,
-                },
+                generationConfig: { temperature: 0.7, maxOutputTokens: 250 },
             }),
         })
         if (!res.ok) return ''
@@ -248,64 +352,9 @@ Return plain text only, no JSON, no markdown, no bullet points. Maximum 3 senten
     }
 }
 
-export const generateWithAI = async (category, level, count = 10) => {
-    if (!GEMINI_KEY) {
-        throw new Error('Gemini API key missing. Add VITE_GEMINI_API_KEY to .env')
-    }
-
-    // Pass the last N questions we've already returned to the AI
-    const avoidList = Array.from(askedQuestions).slice(-40)
-
-    const prompt = buildPrompt(category, level, count, avoidList)
-    const raw = await callGemini(prompt)
-    let questions = parseAIResponse(raw)
-
-    // 🔍 Local dedupe against everything we've already served this session
-    questions = questions.filter((q) => {
-        const norm = normalizeQuestion(q.question)
-        if (askedNormalized.has(norm)) return false
-        askedNormalized.add(norm)
-        return true
-    })
-
-    // If short, ask once more for the missing ones
-    if (questions.length < count) {
-        const needed = count - questions.length
-        try {
-            const secondPrompt = buildPrompt(
-                category,
-                level,
-                needed + 2,   // ask for a couple more to be safe
-                Array.from(askedQuestions).slice(-40)
-            )
-            const raw2 = await callGemini(secondPrompt)
-            let more = parseAIResponse(raw2)
-            more = more.filter((q) => {
-                const norm = normalizeQuestion(q.question)
-                if (askedNormalized.has(norm)) return false
-                askedNormalized.add(norm)
-                return true
-            })
-            questions.push(...more)
-        } catch {
-            // ignore
-        }
-    }
-
-    const final = questions.slice(0, count)
-
-    // Record them so the next call avoids these
-    final.forEach((q) => {
-        askedQuestions.add(q.question)
-    })
-
-    return final
-}
-
 /* =========================================================
-   ARITHMETIC TOPIC CONTENT — language-aware
+   ARITHMETIC TOPIC CONTENT (lesson)
    ========================================================= */
-
 const buildTopicPrompt = (topic, languageAiName = 'English') => {
     const isTelugu = languageAiName.toLowerCase().includes('telugu')
 
@@ -356,29 +405,11 @@ STRICT RULES:
 3. The example and practice questions must NOT be the same or use the same numbers.
 4. Use Indian exam conventions (₹ symbol, metric units).
 5. Do NOT wrap the response in markdown fences.
-6. Return ONLY the JSON object.
-
-Output the raw JSON now.`
+6. Return ONLY the JSON object.${STRICT_JSON_TAIL}`
 }
 
 const parseTopicResponse = (raw) => {
-    if (!raw) throw new Error('Empty AI response')
-    let text = String(raw).trim()
-    text = text.replace(/^```(?:json)?/i, '').replace(/```$/i, '').trim()
-
-    let parsed
-    try {
-        parsed = JSON.parse(text)
-    } catch {
-        const s = text.indexOf('{')
-        const e = text.lastIndexOf('}')
-        if (s === -1 || e === -1) throw new Error('AI response has no JSON object')
-        try {
-            parsed = JSON.parse(text.slice(s, e + 1))
-        } catch {
-            throw new Error('AI returned malformed JSON')
-        }
-    }
+    const parsed = extractJSON(raw, 'object')
 
     if (!parsed || typeof parsed !== 'object') throw new Error('AI response is not an object')
     if (!parsed.definition || !Array.isArray(parsed.keyPoints)) {
@@ -404,9 +435,7 @@ const parseTopicResponse = (raw) => {
 
     return {
         definition: String(parsed.definition || ''),
-        keyPoints: (Array.isArray(parsed.keyPoints) ? parsed.keyPoints : [])
-            .slice(0, 8)
-            .map(String),
+        keyPoints: (Array.isArray(parsed.keyPoints) ? parsed.keyPoints : []).slice(0, 8).map(String),
         example: cleanSection(parsed.example),
         practice: cleanSection(parsed.practice),
     }
@@ -420,7 +449,7 @@ export const generateTopicContent = async (topic, languageAiName = 'English') =>
 }
 
 /* =========================================================
-   PRACTICE EXPLANATION — on-demand, language-aware
+   TOPIC EXPLANATION — on-demand, language-aware
    ========================================================= */
 export const generateTopicExplanation = async (
     topic,
@@ -469,7 +498,6 @@ Do not use markdown. Do not use bullet points. Maximum 3 sentences.`
 /* =========================================================
    DATA INTERPRETATION — with chart data
    ========================================================= */
-
 const DI_SUBTOPIC_GUIDE = {
     'table': 'A simple table with rows and columns of numeric data.',
     'bar-simple': 'A single-series bar chart with 4 to 6 categories.',
@@ -501,17 +529,12 @@ LANGUAGE: Write all labels, questions, and explanations in ${languageAiName}.${i
 Return ONLY valid JSON (no markdown, no code fences) matching this schema:
 
 {
-  "title": "A short title for the dataset (e.g. 'Sales of Five Companies in 2023')",
+  "title": "A short title for the dataset",
   "chartType": "table" | "bar-simple" | "bar-grouped" | "line" | "pie" | "mixed" | "caselet",
   "data": {
-    // For "table": two-dimensional array with header row
-    //   rows: [["Company", "Sales", "Profit"], ["A", "120", "30"], ...]
     "rows": [["...", "..."], ["...", "..."]],
-    // For "bar-simple" / "bar-grouped" / "line" / "pie" / "mixed":
-    //   labels: category names, series: one or more numeric series
     "labels": ["A", "B", "C"],
     "series": [{ "name": "Sales", "values": [100, 200, 300] }],
-    // For "caselet": a paragraph of plain text
     "text": "..."
   },
   "unit": "₹ in lakhs" or "%" or "units",
@@ -522,7 +545,6 @@ Return ONLY valid JSON (no markdown, no code fences) matching this schema:
       "correct": "the exact correct option",
       "explanation": "2-3 sentence step-by-step explanation in ${languageAiName}"
     }
-    // ... 4 questions total at the given difficulty
   ]
 }
 
@@ -536,27 +558,11 @@ STRICT RULES:
 7. For "table", include "rows"; do NOT include labels or series.
 8. For charts, include "labels" and "series"; do NOT include rows.
 9. Do NOT wrap the response in markdown fences.
-10. Return ONLY the JSON object.
-
-Output the raw JSON now.`
+10. Return ONLY the JSON object.${STRICT_JSON_TAIL}`
 }
 
 const parseDIResponse = (raw) => {
-    if (!raw) throw new Error('Empty AI response')
-    let text = String(raw).trim()
-    text = text.replace(/^```(?:json)?/i, '').replace(/```$/i, '').trim()
-
-    let parsed
-    try {
-        parsed = JSON.parse(text)
-    } catch {
-        const s = text.indexOf('{')
-        const e = text.lastIndexOf('}')
-        if (s === -1 || e === -1) throw new Error('AI response has no JSON object')
-        try { parsed = JSON.parse(text.slice(s, e + 1)) } catch {
-            throw new Error('AI returned malformed JSON')
-        }
-    }
+    const parsed = extractJSON(raw, 'object')
 
     if (!parsed || typeof parsed !== 'object') throw new Error('AI response not an object')
     if (!parsed.title || !parsed.chartType || !parsed.data) {
@@ -566,7 +572,6 @@ const parseDIResponse = (raw) => {
         throw new Error('AI response has no questions')
     }
 
-    // Validate questions
     const questions = parsed.questions.slice(0, 6).map((q) => {
         const opts = Array.isArray(q.options) ? q.options.map(String) : []
         const uniq = [...new Set(opts)]
@@ -600,7 +605,6 @@ export const generateDIProblem = async (subtopic, level, languageAiName = 'Engli
 /* =========================================================
    TOPIC PRACTICE — 1 question per call with explanation
    ========================================================= */
-
 const buildPracticePrompt = (topic, level, languageAiName = 'English', avoidList = []) => {
     const isTelugu = languageAiName.toLowerCase().includes('telugu')
 
@@ -611,52 +615,36 @@ const buildPracticePrompt = (topic, level, languageAiName = 'English', avoidList
     }[level]
 
     const avoidBlock = avoidList.length
-        ? `\nDo NOT repeat or closely resemble any of these previously asked questions:\n${avoidList.slice(-15).map((q, i) => `${i + 1}. ${String(q).slice(0, 80)}`).join('\n')}\n`
+        ? `\nDO NOT repeat or closely resemble any of these previously asked questions:\n${avoidList.slice(-15).map((q, i) => `${i + 1}. ${String(q).slice(0, 80)}`).join('\n')}\n`
         : ''
 
-    return `You are an Indian bank exam tutor. Generate ONE practice question on the arithmetic topic below.
+    return `You are an Indian bank exam tutor. Generate ONE practice question.
 
 TOPIC: ${topic.title} — ${topic.subtitle}
 SYLLABUS: ${topic.syllabus.join(', ')}
 DIFFICULTY: ${level.toUpperCase()} — ${difficulty}
-LANGUAGE: Write the question, options, and explanation in ${languageAiName}.${isTelugu ? ' Use Telugu script (తెలుగు). Keep numbers as digits.' : ''}
+LANGUAGE: ${languageAiName}${isTelugu ? ' (use Telugu script, keep numbers as digits)' : ''}
 ${avoidBlock}
-Return ONLY valid JSON (no markdown, no code fences):
+Return ONLY this JSON object:
 
 {
-  "topic": "short topic label (e.g. 'Percentage')",
-  "question": "the full question text in ${languageAiName}",
+  "topic": "short topic label like 'Percentage'",
+  "question": "the full question text",
   "options": ["opt A", "opt B", "opt C", "opt D"],
-  "correct": "the exact correct option text",
-  "explanation": "2-3 sentence step-by-step explanation in ${languageAiName} — show the calculation."
+  "correct": "the exact same text as one of the 4 options above",
+  "explanation": "2-3 sentence step-by-step explanation showing the calculation"
 }
 
 STRICT RULES:
-1. Exactly 4 options, all unique.
-2. "correct" must match exactly one option.
+1. Exactly 4 unique options.
+2. "correct" must be character-for-character identical to one of the options.
 3. Numbers must be clean and realistic.
 4. Do NOT wrap in markdown fences.
-5. Return ONLY the JSON object.
-
-Output the raw JSON now.`
+5. Return ONLY the JSON object.${STRICT_JSON_TAIL}`
 }
 
 const parsePracticeResponse = (raw) => {
-    if (!raw) throw new Error('Empty AI response')
-    let text = String(raw).trim()
-    text = text.replace(/^```(?:json)?/i, '').replace(/```$/i, '').trim()
-
-    let parsed
-    try {
-        parsed = JSON.parse(text)
-    } catch {
-        const s = text.indexOf('{')
-        const e = text.lastIndexOf('}')
-        if (s === -1 || e === -1) throw new Error('No JSON in AI response')
-        try { parsed = JSON.parse(text.slice(s, e + 1)) } catch {
-            throw new Error('Malformed AI JSON')
-        }
-    }
+    const parsed = extractJSON(raw, 'object')
 
     if (!parsed || typeof parsed !== 'object') throw new Error('Not an object')
     if (!parsed.question || !Array.isArray(parsed.options) || !parsed.correct) {
@@ -682,7 +670,114 @@ export const generatePracticeQuestion = async (
     avoidList = []
 ) => {
     if (!GEMINI_KEY) throw new Error('Gemini API key missing — check .env')
-    const prompt = buildPracticePrompt(topic, level, languageAiName, avoidList)
-    const raw = await callGemini(prompt)
-    return parsePracticeResponse(raw)
+
+    let lastErr
+    for (let attempt = 0; attempt < 2; attempt++) {
+        try {
+            const prompt = buildPracticePrompt(topic, level, languageAiName, avoidList)
+            const raw = await callGemini(prompt)
+            return parsePracticeResponse(raw)
+        } catch (err) {
+            lastErr = err
+            if (attempt === 0 && /JSON|Malformed|parse|Not an object|Missing/i.test(err.message)) {
+                try {
+                    const strictPrompt = buildPracticePrompt(topic, level, languageAiName, avoidList) +
+                        `\n\nCRITICAL: Your previous response was not valid JSON. Return ONLY a single JSON object starting with { and ending with }. No markdown, no commentary.`
+                    const raw = await callGemini(strictPrompt)
+                    return parsePracticeResponse(raw)
+                } catch (err2) {
+                    lastErr = err2
+                }
+            }
+        }
+    }
+    throw lastErr || new Error('Failed to generate question')
+}
+
+/* =========================================================
+   GK / BANKING AWARENESS — practice questions
+   ========================================================= */
+const GK_TOPIC_GUIDE = {
+    'banking-awareness': 'RBI functions, monetary policy tools (Repo, CRR, SLR), types of banks, payment systems (UPI, NEFT, RTGS, IMPS), NPA classification, SARFAESI Act, Banking Ombudsman scheme, deposit insurance.',
+    'financial-awareness': 'SEBI, IRDAI, PFRDA, mutual funds, insurance products, government financial inclusion schemes (Jan Dhan, Mudra, Stand-Up India), capital markets, NBFCs.',
+    'static-gk-banking': 'Headquarters of RBI, SBI, NABARD, SEBI, IRDAI; founding years; bank taglines; international financial organisations (IMF, World Bank, ADB); important financial days; currency codes.',
+    'current-affairs-banking': 'Recent RBI policy announcements, banking sector appointments, mergers and acquisitions, government economic initiatives, international financial summits, awards in finance, Union Budget 2025-26 financial sector highlights.',
+    'economy-banking': 'GDP, GNP, NNP, inflation (WPI vs CPI), Union Budget terminology (revenue deficit, fiscal deficit, primary deficit), Economic Survey, Balance of Payments, FDI and FPI.',
+}
+
+const buildGKPrompt = (gkTopic, level, languageAiName = 'English', avoidList = []) => {
+    const isTelugu = languageAiName.toLowerCase().includes('telugu')
+
+    const difficulty = {
+        easy: 'Basic factual question — direct recall. Student must know one fact.',
+        medium: 'Bank exam prelims level — requires understanding and one fact or comparison.',
+        extreme: 'SBI PO Mains / RBI Grade B level — multi-statement or analytical. Include tricky distractors.',
+    }[level]
+
+    const avoidBlock = avoidList.length
+        ? `\nDO NOT generate any question similar to these already-used questions:\n${avoidList.slice(-12).map((q, i) => `${i + 1}. ${String(q).slice(0, 90)}`).join('\n')}\n`
+        : ''
+
+    return `You are an expert Indian bank exam tutor. Generate exactly ONE multiple-choice GK question.
+
+TOPIC: ${gkTopic.title} — ${gkTopic.subtitle}
+SYLLABUS FOCUS: ${GK_TOPIC_GUIDE[gkTopic.id] || gkTopic.syllabus.join(', ')}
+DIFFICULTY: ${level.toUpperCase()} — ${difficulty}
+LANGUAGE: ${languageAiName}${isTelugu ? ' (use Telugu script for the question, options and explanation, but keep proper nouns like RBI, SBI, NEFT in English)' : ''}
+${avoidBlock}
+EXAMPLES OF GOOD QUESTIONS:
+- "What does the abbreviation 'NPA' stand for in banking?" → Non-Performing Asset
+- "Which organisation regulates the insurance sector in India?" → IRDAI
+- "What is the reverse repo rate?" → rate at which RBI borrows from banks
+- "The headquarters of NABARD is located in which city?" → Mumbai
+
+Now generate a fresh, unique question.
+
+Return ONLY this JSON structure with real content:
+
+{
+  "topic": "short label (2-4 words, e.g. 'RBI Policy' or 'Static GK')",
+  "question": "A clear, complete question with proper grammar and full forms of abbreviations on first use.",
+  "options": ["option 1", "option 2", "option 3", "option 4"],
+  "correct": "the exact same text as one of the options above",
+  "explanation": "2-3 sentences explaining the correct answer with the key fact, in ${languageAiName}."
+}
+
+STRICT RULES:
+1. Exactly 4 unique options.
+2. "correct" must be character-for-character identical to one of the 4 options.
+3. Must be a real, factually correct question about the topic.
+4. Do NOT wrap in markdown fences.
+5. Return ONLY the JSON object.${STRICT_JSON_TAIL}`
+}
+
+export const generateGKQuestion = async (
+    gkTopic,
+    level,
+    languageAiName = 'English',
+    avoidList = []
+) => {
+    if (!GEMINI_KEY) throw new Error('Gemini API key missing — check .env')
+
+    let lastErr
+    for (let attempt = 0; attempt < 2; attempt++) {
+        try {
+            const prompt = buildGKPrompt(gkTopic, level, languageAiName, avoidList)
+            const raw = await callGemini(prompt)
+            return parsePracticeResponse(raw)
+        } catch (err) {
+            lastErr = err
+            if (attempt === 0 && /JSON|Malformed|parse|Not an object|Missing/i.test(err.message)) {
+                try {
+                    const strictPrompt = buildGKPrompt(gkTopic, level, languageAiName, avoidList) +
+                        `\n\nCRITICAL: Your previous response was not valid JSON. Return ONLY a single JSON object starting with { and ending with }. No markdown, no commentary.`
+                    const raw = await callGemini(strictPrompt)
+                    return parsePracticeResponse(raw)
+                } catch (err2) {
+                    lastErr = err2
+                }
+            }
+        }
+    }
+    throw lastErr || new Error('Failed to generate GK question')
 }

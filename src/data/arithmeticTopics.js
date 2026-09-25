@@ -10,7 +10,7 @@ export const ARITHMETIC_TOPICS = [
         subtitle: 'BODMAS & Approximation',
         shortDesc: 'Solve complex expressions using BODMAS, surds, indices, and approximation techniques.',
         icon: 'Sigma',
-        color: 'cyan',
+        color: 'emerald',
         syllabus: [
             'BODMAS rule',
             'Fractions and decimals',

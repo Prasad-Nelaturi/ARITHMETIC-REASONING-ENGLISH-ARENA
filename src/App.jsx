@@ -8,6 +8,8 @@ import ArithmeticTopics from './pages/ArithmeticTopics.jsx'
 import TopicDetail from './pages/TopicDetail.jsx'
 import DITopic from './pages/DITopic.jsx'
 import TopicPractice from './pages/TopicPractice.jsx'
+import GKTopics from './pages/GKTopics.jsx'
+import GKPractice from './pages/GKPractice.jsx'
 
 const App = () => {
   const navigate = useNavigate()
@@ -46,6 +48,10 @@ const App = () => {
         <Route path="/arithmetic/:id" element={<TopicDetail />} />
         <Route path="/arithmetic/:id/practice" element={<TopicPractice />} />
         <Route path="/arithmetic/data-interpretation/:subtopic" element={<DITopic />} />
+
+        <Route path="/gk" element={<GKTopics />} />
+        <Route path="/gk/:id" element={<GKPractice />} />
+
         <Route path="/game" element={
           <GameScreen
             player1Name={player1Name} player2Name={player2Name}
