@@ -43,7 +43,7 @@ const StartScreen = ({ onStart }) => {
     }
 
     return (
-        <div className="relative min-h-screen w-full flex items-center justify-center pt-10 pb-5 px-5 z-10">
+        <div className="relative min-h-screen w-full flex items-center justify-center pt-20 pb-5 px-5 z-10">
             <FloatingHearts />
             <div className="w-full max-w-md flex flex-col gap-4 animate-slide-up">
 
