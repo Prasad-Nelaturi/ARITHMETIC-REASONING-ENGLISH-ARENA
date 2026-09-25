@@ -3,7 +3,7 @@ import { Link as RouterLink, useParams, useNavigate, useSearchParams } from 'rea
 import {
     ArrowLeft, Lightbulb, CheckCircle2, XCircle, BookOpen,
     Sparkles, Target, RefreshCw, Eye, EyeOff, Loader2,
-    AlertCircle, Brain, Wand2, Languages,
+    AlertCircle, Brain, Wand2, Languages, Play, Timer,
     Table, BarChart2, BarChart4, LineChart, PieChart, Layers, FileText, ArrowRight, BarChart3,
 } from 'lucide-react'
 import {
@@ -72,84 +72,84 @@ const TopicDetail = () => {
         )
     }
 
-// ============ DATA INTERPRETATION — simple subtopic list ============
-if (topic.id === 'data-interpretation') {
-  const SUB_INFO = {
-    table:        { Icon: Table,     desc: 'Rows and columns of numbers',        color: 'violet' },
-    'bar-simple': { Icon: BarChart2, desc: 'Bars showing one value per category', color: 'blue' },
-    'bar-grouped':{ Icon: BarChart4, desc: 'Two or more series side by side',     color: 'pink' },
-    line:         { Icon: LineChart, desc: 'Trend over time',                     color: 'emerald' },
-    pie:          { Icon: PieChart,  desc: 'Percentages of a whole',              color: 'amber' },
-    mixed:        { Icon: Layers,    desc: 'Bars and lines combined',             color: 'rose' },
-    caselet:      { Icon: FileText,  desc: 'Text-only data — no chart',           color: 'cyan' },
-  }
+    // ============ DATA INTERPRETATION — simple subtopic list ============
+    if (topic.id === 'data-interpretation') {
+        const SUB_INFO = {
+            table: { Icon: Table, desc: 'Rows and columns of numbers', color: 'violet' },
+            'bar-simple': { Icon: BarChart2, desc: 'Bars showing one value per category', color: 'blue' },
+            'bar-grouped': { Icon: BarChart4, desc: 'Two or more series side by side', color: 'pink' },
+            line: { Icon: LineChart, desc: 'Trend over time', color: 'emerald' },
+            pie: { Icon: PieChart, desc: 'Percentages of a whole', color: 'amber' },
+            mixed: { Icon: Layers, desc: 'Bars and lines combined', color: 'rose' },
+            caselet: { Icon: FileText, desc: 'Text-only data — no chart', color: 'cyan' },
+        }
 
-  const COLOR = {
-    violet:  { box: 'bg-violet-500/15 border-violet-400/40',  icon: 'text-violet-300',  hover: 'hover:bg-violet-500/25' },
-    blue:    { box: 'bg-blue-500/15 border-blue-400/40',      icon: 'text-blue-300',    hover: 'hover:bg-blue-500/25' },
-    pink:    { box: 'bg-pink-500/15 border-pink-400/40',      icon: 'text-pink-300',    hover: 'hover:bg-pink-500/25' },
-    emerald: { box: 'bg-emerald-500/15 border-emerald-400/40',icon: 'text-emerald-300', hover: 'hover:bg-emerald-500/25' },
-    amber:   { box: 'bg-amber-500/15 border-amber-400/40',    icon: 'text-amber-300',   hover: 'hover:bg-amber-500/25' },
-    rose:    { box: 'bg-rose-500/15 border-rose-400/40',      icon: 'text-rose-300',    hover: 'hover:bg-rose-500/25' },
-    cyan:    { box: 'bg-cyan-500/15 border-cyan-400/40',      icon: 'text-cyan-300',    hover: 'hover:bg-cyan-500/25' },
-  }
+        const COLOR = {
+            violet: { box: 'bg-violet-500/15 border-violet-400/40', icon: 'text-violet-300', hover: 'hover:bg-violet-500/25' },
+            blue: { box: 'bg-blue-500/15 border-blue-400/40', icon: 'text-blue-300', hover: 'hover:bg-blue-500/25' },
+            pink: { box: 'bg-pink-500/15 border-pink-400/40', icon: 'text-pink-300', hover: 'hover:bg-pink-500/25' },
+            emerald: { box: 'bg-emerald-500/15 border-emerald-400/40', icon: 'text-emerald-300', hover: 'hover:bg-emerald-500/25' },
+            amber: { box: 'bg-amber-500/15 border-amber-400/40', icon: 'text-amber-300', hover: 'hover:bg-amber-500/25' },
+            rose: { box: 'bg-rose-500/15 border-rose-400/40', icon: 'text-rose-300', hover: 'hover:bg-rose-500/25' },
+            cyan: { box: 'bg-cyan-500/15 border-cyan-400/40', icon: 'text-cyan-300', hover: 'hover:bg-cyan-500/25' },
+        }
 
-  return (
-    <div className="min-h-screen w-full px-4 pb-10 pt-[76px]">
-      <div className="max-w-2xl mx-auto flex flex-col gap-4">
+        return (
+            <div className="min-h-screen w-full px-4 pb-10 pt-[76px]">
+                <div className="max-w-2xl mx-auto flex flex-col gap-4">
 
-        {/* Back */}
-        <button
-          type="button"
-          onClick={() => navigate('/arithmetic')}
-          className="self-start flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-800/60 border border-slate-500/20 hover:border-slate-400/40 text-[11px] font-bold text-slate-300 transition-all"
-        >
-          <ArrowLeft size={12} strokeWidth={2.8} />
-          <span>All topics</span>
-        </button>
+                    {/* Back */}
+                    <button
+                        type="button"
+                        onClick={() => navigate('/arithmetic')}
+                        className="self-start flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-800/60 border border-slate-500/20 hover:border-slate-400/40 text-[11px] font-bold text-slate-300 transition-all"
+                    >
+                        <ArrowLeft size={12} strokeWidth={2.8} />
+                        <span>All topics</span>
+                    </button>
 
-        {/* Title */}
-        <div>
-          <h1 className="text-2xl sm:text-3xl font-black text-slate-100 mb-1">
-            {topic.title}
-          </h1>
-          <p className="text-[13px] text-slate-400">
-            Pick a chart type to practice with AI-generated questions.
-          </p>
-        </div>
+                    {/* Title */}
+                    <div>
+                        <h1 className="text-2xl sm:text-3xl font-black text-slate-100 mb-1">
+                            {topic.title}
+                        </h1>
+                        <p className="text-[13px] text-slate-400">
+                            Pick a chart type to practice with AI-generated questions.
+                        </p>
+                    </div>
 
-        {/* Subtopic list */}
-        <div className="flex flex-col gap-2">
-          {topic.subtopics.map((sub) => {
-            const info = SUB_INFO[sub.id] || SUB_INFO.table
-            const c = COLOR[info.color]
-            const Icon = info.Icon
-            return (
-              <RouterLink
-                key={sub.id}
-                to={`/arithmetic/data-interpretation/${sub.id}`}
-                className={`flex items-center gap-3.5 p-4 rounded-xl bg-slate-900/60 border border-slate-500/20 transition-all hover:border-slate-400/40 active:scale-[0.99] ${c.hover}`}
-              >
-                <div className={`w-11 h-11 rounded-xl grid place-items-center shrink-0 border ${c.box}`}>
-                  <Icon size={20} className={c.icon} strokeWidth={2.2} />
+                    {/* Subtopic list */}
+                    <div className="flex flex-col gap-2">
+                        {topic.subtopics.map((sub) => {
+                            const info = SUB_INFO[sub.id] || SUB_INFO.table
+                            const c = COLOR[info.color]
+                            const Icon = info.Icon
+                            return (
+                                <RouterLink
+                                    key={sub.id}
+                                    to={`/arithmetic/data-interpretation/${sub.id}`}
+                                    className={`flex items-center gap-3.5 p-4 rounded-xl bg-slate-900/60 border border-slate-500/20 transition-all hover:border-slate-400/40 active:scale-[0.99] ${c.hover}`}
+                                >
+                                    <div className={`w-11 h-11 rounded-xl grid place-items-center shrink-0 border ${c.box}`}>
+                                        <Icon size={20} className={c.icon} strokeWidth={2.2} />
+                                    </div>
+                                    <div className="flex-1 min-w-0">
+                                        <div className="text-[15px] font-black text-slate-100">
+                                            {sub.label}
+                                        </div>
+                                        <div className="text-[12px] text-slate-400 mt-0.5">
+                                            {info.desc}
+                                        </div>
+                                    </div>
+                                    <ArrowRight size={16} className="text-slate-500 shrink-0" strokeWidth={2.8} />
+                                </RouterLink>
+                            )
+                        })}
+                    </div>
                 </div>
-                <div className="flex-1 min-w-0">
-                  <div className="text-[15px] font-black text-slate-100">
-                    {sub.label}
-                  </div>
-                  <div className="text-[12px] text-slate-400 mt-0.5">
-                    {info.desc}
-                  </div>
-                </div>
-                <ArrowRight size={16} className="text-slate-500 shrink-0" strokeWidth={2.8} />
-              </RouterLink>
-            )
-          })}
-        </div>
-      </div>
-    </div>
-  )
-}
+            </div>
+        )
+    }
 
     const correct = selected === content?.practice?.correct
 
@@ -220,6 +220,26 @@ if (topic.id === 'data-interpretation') {
                     <h1 className="text-[clamp(22px,5.5vw,30px)] font-black tracking-[1.2px] bg-gradient-to-br from-violet-300 via-pink-300 to-blue-300 bg-clip-text text-transparent leading-tight">
                         {topic.title}
                     </h1>
+                </div>
+
+                {/* Practice CTA */}
+                <div className="rounded-2xl bg-gradient-to-br from-emerald-500/20 to-teal-500/10 border border-emerald-400/40 p-4 flex items-center gap-3">
+                    <div className="w-12 h-12 rounded-xl grid place-items-center shrink-0 bg-emerald-500/20 border border-emerald-400/50">
+                        <Timer size={22} className="text-emerald-300" strokeWidth={2.4} />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                        <div className="text-[14px] font-black text-slate-100">Practice with timer</div>
+                        <div className="text-[11px] text-slate-400 mt-0.5">
+                            AI questions · English or Telugu · Step-by-step solutions
+                        </div>
+                    </div>
+                    <RouterLink
+                        to={`/arithmetic/${topic.id}/practice${urlLang ? `?lang=${urlLang}` : ''}`}
+                        className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-gradient-to-br from-emerald-500 to-teal-600 text-white text-[11px] font-black tracking-wider uppercase shadow-[0_8px_22px_rgba(16,185,129,0.4)] active:scale-95 shrink-0"
+                    >
+                        <Play size={13} strokeWidth={3} fill="#fff" />
+                        <span>Start</span>
+                    </RouterLink>
                 </div>
 
                 {/* Syllabus chips */}

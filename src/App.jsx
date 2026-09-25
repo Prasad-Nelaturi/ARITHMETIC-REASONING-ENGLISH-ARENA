@@ -7,6 +7,7 @@ import ResultScreen from './pages/ResultScreen.jsx'
 import ArithmeticTopics from './pages/ArithmeticTopics.jsx'
 import TopicDetail from './pages/TopicDetail.jsx'
 import DITopic from './pages/DITopic.jsx'
+import TopicPractice from './pages/TopicPractice.jsx'
 
 const App = () => {
   const navigate = useNavigate()
@@ -43,6 +44,7 @@ const App = () => {
         <Route path="/" element={<StartScreen onStart={startGame} />} />
         <Route path="/arithmetic" element={<ArithmeticTopics />} />
         <Route path="/arithmetic/:id" element={<TopicDetail />} />
+        <Route path="/arithmetic/:id/practice" element={<TopicPractice />} />
         <Route path="/arithmetic/data-interpretation/:subtopic" element={<DITopic />} />
         <Route path="/game" element={
           <GameScreen

@@ -596,3 +596,93 @@ export const generateDIProblem = async (subtopic, level, languageAiName = 'Engli
     const raw = await callGemini(prompt)
     return parseDIResponse(raw)
 }
+
+/* =========================================================
+   TOPIC PRACTICE — 1 question per call with explanation
+   ========================================================= */
+
+const buildPracticePrompt = (topic, level, languageAiName = 'English', avoidList = []) => {
+    const isTelugu = languageAiName.toLowerCase().includes('telugu')
+
+    const difficulty = {
+        easy: 'Simple arithmetic. Small numbers. Direct application of the rule.',
+        medium: 'Bank exam prelims level. Two-step problems. Moderate numbers.',
+        extreme: 'SBI PO Mains level. Multi-step, tricky distractors, large numbers.',
+    }[level]
+
+    const avoidBlock = avoidList.length
+        ? `\nDo NOT repeat or closely resemble any of these previously asked questions:\n${avoidList.slice(-15).map((q, i) => `${i + 1}. ${String(q).slice(0, 80)}`).join('\n')}\n`
+        : ''
+
+    return `You are an Indian bank exam tutor. Generate ONE practice question on the arithmetic topic below.
+
+TOPIC: ${topic.title} — ${topic.subtitle}
+SYLLABUS: ${topic.syllabus.join(', ')}
+DIFFICULTY: ${level.toUpperCase()} — ${difficulty}
+LANGUAGE: Write the question, options, and explanation in ${languageAiName}.${isTelugu ? ' Use Telugu script (తెలుగు). Keep numbers as digits.' : ''}
+${avoidBlock}
+Return ONLY valid JSON (no markdown, no code fences):
+
+{
+  "topic": "short topic label (e.g. 'Percentage')",
+  "question": "the full question text in ${languageAiName}",
+  "options": ["opt A", "opt B", "opt C", "opt D"],
+  "correct": "the exact correct option text",
+  "explanation": "2-3 sentence step-by-step explanation in ${languageAiName} — show the calculation."
+}
+
+STRICT RULES:
+1. Exactly 4 options, all unique.
+2. "correct" must match exactly one option.
+3. Numbers must be clean and realistic.
+4. Do NOT wrap in markdown fences.
+5. Return ONLY the JSON object.
+
+Output the raw JSON now.`
+}
+
+const parsePracticeResponse = (raw) => {
+    if (!raw) throw new Error('Empty AI response')
+    let text = String(raw).trim()
+    text = text.replace(/^```(?:json)?/i, '').replace(/```$/i, '').trim()
+
+    let parsed
+    try {
+        parsed = JSON.parse(text)
+    } catch {
+        const s = text.indexOf('{')
+        const e = text.lastIndexOf('}')
+        if (s === -1 || e === -1) throw new Error('No JSON in AI response')
+        try { parsed = JSON.parse(text.slice(s, e + 1)) } catch {
+            throw new Error('Malformed AI JSON')
+        }
+    }
+
+    if (!parsed || typeof parsed !== 'object') throw new Error('Not an object')
+    if (!parsed.question || !Array.isArray(parsed.options) || !parsed.correct) {
+        throw new Error('Missing required fields')
+    }
+
+    const opts = [...new Set([String(parsed.correct), ...parsed.options.map(String)])].slice(0, 4)
+    while (opts.length < 4) opts.push(`Option ${opts.length + 1}`)
+
+    return {
+        topic: String(parsed.topic || 'General'),
+        question: String(parsed.question),
+        options: opts.sort(() => Math.random() - 0.5),
+        correct: String(parsed.correct),
+        explanation: String(parsed.explanation || ''),
+    }
+}
+
+export const generatePracticeQuestion = async (
+    topic,
+    level,
+    languageAiName = 'English',
+    avoidList = []
+) => {
+    if (!GEMINI_KEY) throw new Error('Gemini API key missing — check .env')
+    const prompt = buildPracticePrompt(topic, level, languageAiName, avoidList)
+    const raw = await callGemini(prompt)
+    return parsePracticeResponse(raw)
+}

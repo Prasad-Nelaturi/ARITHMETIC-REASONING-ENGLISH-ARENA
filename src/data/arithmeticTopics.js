@@ -5,6 +5,22 @@
 
 export const ARITHMETIC_TOPICS = [
     {
+        id: 'simplifications',
+        title: 'Simplifications',
+        subtitle: 'BODMAS & Approximation',
+        shortDesc: 'Solve complex expressions using BODMAS, surds, indices, and approximation techniques.',
+        icon: 'Sigma',
+        color: 'cyan',
+        syllabus: [
+            'BODMAS rule',
+            'Fractions and decimals',
+            'Surds and indices',
+            'Square roots and cube roots',
+            'Approximation',
+            'Percentage in expressions',
+        ],
+    },
+    {
         id: 'cassette',
         title: 'Cassette',
         subtitle: 'Ratio, Proportion & Partnership',
