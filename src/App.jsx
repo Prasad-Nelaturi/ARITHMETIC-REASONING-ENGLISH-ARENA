@@ -10,6 +10,9 @@ import DITopic from './pages/DITopic.jsx'
 import TopicPractice from './pages/TopicPractice.jsx'
 import GKTopics from './pages/GKTopics.jsx'
 import GKPractice from './pages/GKPractice.jsx'
+import ExamHome from './pages/ExamHome.jsx'
+import ExamRunner from './pages/ExamRunner.jsx'
+import ExamResult from './pages/ExamResult.jsx'
 
 const App = () => {
   const navigate = useNavigate()
@@ -51,6 +54,10 @@ const App = () => {
 
         <Route path="/gk" element={<GKTopics />} />
         <Route path="/gk/:id" element={<GKPractice />} />
+
+        <Route path="/exam" element={<ExamHome />} />
+        <Route path="/exam/result" element={<ExamResult />} />
+        <Route path="/exam/:type/:stage" element={<ExamRunner />} />
 
         <Route path="/game" element={
           <GameScreen

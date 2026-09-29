@@ -1,13 +1,14 @@
 import React, { useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import {
-    Puzzle, Home, Calculator, Menu, X, Phone, AlertTriangle, BookOpen
+    Puzzle, Home, Calculator, Menu, X, Phone, AlertTriangle, BookOpen, GraduationCap
 } from 'lucide-react'
 
 const NAV_ITEMS = [
     { label: 'Home', path: '/', Icon: Home },
     { label: 'Arithmetic', path: '/arithmetic', Icon: Calculator },
-    { label: 'GK',         path: '/gk',         Icon: BookOpen },
+    { label: 'GK', path: '/gk', Icon: BookOpen },
+    { label: 'Exam', path: '/exam', Icon: GraduationCap }
 ]
 
 const Navbar = () => {

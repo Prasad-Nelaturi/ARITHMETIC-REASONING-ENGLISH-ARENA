@@ -4,6 +4,7 @@
  * Anti-repeat: passes previously asked questions back to the AI.
  * Robust JSON extractor handles: markdown fences, preamble text,
  * trailing commas, truncated arrays, and auto-repair.
+ * Serial queue ensures we stay under the free-tier rate limit.
  */
 
 const PROVIDER = import.meta.env.VITE_AI_PROVIDER || 'gemini'
@@ -108,10 +109,10 @@ const extractJSON = (raw, expect = 'object') => {
 const buildAvoidList = (avoidQuestions = []) => {
     if (!avoidQuestions.length) return ''
     const trimmed = avoidQuestions
-        .slice(-30)
-        .map((q, i) => `${i + 1}. ${String(q).slice(0, 100)}`)
+        .slice(-15)
+        .map((q, i) => `${i + 1}. ${String(q).slice(0, 70)}`)
         .join('\n')
-    return `\n\nDO NOT REPEAT — the following questions have ALREADY been asked in this session. Do not generate any question that is the same, similar, or uses the same numbers/words:\n${trimmed}\n`
+    return `\n\nDO NOT REPEAT:\n${trimmed}\n`
 }
 
 const STRICT_JSON_TAIL = `
@@ -119,15 +120,39 @@ const STRICT_JSON_TAIL = `
 ABSOLUTE REQUIREMENTS:
 1. Response must START with the opening character and END with the closing character.
 2. No markdown, no code fences, no triple backticks, no text before or after.
-3. No trailing commas. Use standard double quotes for all strings.
+3. No trailing commas. Standard double quotes only.
 4. Return the raw JSON only.
 
 Output the raw JSON now.`
 
 /* =========================================================
-   CALL GEMINI (network layer)
+   SERIAL REQUEST QUEUE
+   One request at a time + minimum gap between requests.
+   Guarantees we stay under 15 req/min (free tier limit).
    ========================================================= */
-const callGemini = async (prompt, retries = 3) => {
+const MIN_GAP_MS = 4500   // ~13 req/min — safe under 15
+let queueTail = Promise.resolve()
+let lastFireAt = 0
+
+const enqueue = (fn) => {
+    const next = queueTail.then(async () => {
+        const elapsed = Date.now() - lastFireAt
+        const wait = Math.max(0, MIN_GAP_MS - elapsed)
+        if (wait > 0) {
+            console.log(`[AI Queue] waiting ${Math.round(wait / 1000)}s`)
+            await new Promise((r) => setTimeout(r, wait))
+        }
+        lastFireAt = Date.now()
+        return fn()
+    })
+    queueTail = next.catch(() => { })
+    return next
+}
+
+/* =========================================================
+   GEMINI CALL (goes through the serial queue)
+   ========================================================= */
+const callGeminiInner = async (prompt, retries = 4) => {
     if (!GEMINI_KEY) throw new Error('Gemini API key missing — check .env')
 
     const url = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent'
@@ -144,21 +169,38 @@ const callGemini = async (prompt, retries = 3) => {
                 body: JSON.stringify({
                     contents: [{ parts: [{ text: prompt }] }],
                     generationConfig: {
-                        temperature: 1.1,
+                        temperature: 1.0,
                         topP: 0.95,
-                        topK: 40,
-                        maxOutputTokens: 8192,
+                        maxOutputTokens: 2048,
                         responseMimeType: 'application/json',
                     },
                 }),
             })
 
             if (res.status === 429) {
-                const retryAfter = Number(res.headers.get('Retry-After')) || 30
-                await new Promise((r) => setTimeout(r, retryAfter * 1000))
-                lastError = new Error('Rate limited (429)')
+                let waitMs = 30000
+                try {
+                    const clone = res.clone()
+                    const body = await clone.json()
+                    const msg = body?.error?.message || ''
+                    const m = msg.match(/retry in ([\d.]+)s/i)
+                    if (m) waitMs = (Math.ceil(parseFloat(m[1])) + 1) * 1000
+                } catch { /* ignore */ }
+                const headerVal = Number(res.headers.get('Retry-After'))
+                if (!isNaN(headerVal) && headerVal > 0) waitMs = headerVal * 1000
+
+                console.warn(`[AI] 429 — waiting ${Math.round(waitMs / 1000)}s (attempt ${attempt + 1}/${retries})`)
+                await new Promise((r) => setTimeout(r, waitMs))
+                lastError = new Error('Rate limited')
                 continue
             }
+
+            if (res.status === 503) {
+                await new Promise((r) => setTimeout(r, 2500))
+                lastError = new Error('Service busy')
+                continue
+            }
+
             if (!res.ok) {
                 const errText = await res.text()
                 throw new Error(`Gemini ${res.status}: ${errText.slice(0, 200)}`)
@@ -171,11 +213,13 @@ const callGemini = async (prompt, retries = 3) => {
         } catch (err) {
             lastError = err
             if (attempt === retries - 1) throw err
-            await new Promise((r) => setTimeout(r, 800 * (attempt + 1)))
+            await new Promise((r) => setTimeout(r, 1500 * (attempt + 1)))
         }
     }
     throw lastError || new Error('Gemini failed after retries')
 }
+
+const callGemini = (prompt, retries = 4) => enqueue(() => callGeminiInner(prompt, retries))
 
 const normalizeQuestion = (str) =>
     String(str || '')
@@ -188,36 +232,23 @@ const normalizeQuestion = (str) =>
    CATEGORY BATCH (arithmetic / reasoning / english)
    ========================================================= */
 const buildBatchPrompt = (category, level, count, avoidQuestions = []) => {
-    return `You are a question generator for competitive bank exams. Return ONLY valid JSON, no markdown, no explanation.
+    return `Generate ${count} unique bank-exam MCQs for the ${category} section.
 
-${CATEGORY_GUIDE[category]}
-
-Difficulty: ${level.toUpperCase()}
-${DIFFICULTY[level]}
+Difficulty: ${level}
+${CATEGORY_GUIDE[category] || ''}
 ${buildAvoidList(avoidQuestions)}
-Generate EXACTLY ${count} unique questions as a JSON array with this exact schema:
+Format: JSON array only.
 [
-  {
-    "topic": "short topic label like 'Percentage' or 'Idioms'",
-    "question": "the full question text",
-    "correct": "the correct answer as a string",
-    "options": ["option A", "option B", "option C", "option D"]
-  }
+  {"topic":"...","question":"...","correct":"...","options":["A","B","C","D"]}
 ]
 
-STRICT RULES:
-1. Return exactly ${count} objects.
-2. Every question must have exactly 4 options.
-3. All 4 options must be unique (no duplicates).
-4. "correct" must match one of the 4 options exactly.
-5. No two questions may repeat the same numbers, words, or structure.
-6. Every question must be DIFFERENT from the ones listed in the DO NOT REPEAT section above.
-7. Vary the numbers significantly — do not use the same values across questions.
-8. Do not wrap the response in markdown code fences.
-9. Do not add any text before or after the JSON array.
-10. If a value is a number, still return it as a string in "correct" and "options".
+Rules:
+- ${count} questions exactly.
+- 4 unique options each, correct is one of them.
+- No repeats.
+- No markdown.
 
-Output the raw JSON array now.`
+Output JSON:`
 }
 
 const parseAIResponse = (raw) => {
@@ -273,8 +304,10 @@ export const generateWithAI = async (category, level, count = 10) => {
         throw new Error('Gemini API key missing. Add VITE_GEMINI_API_KEY to .env')
     }
 
-    const avoidList = Array.from(askedQuestions).slice(-40)
-    const prompt = buildBatchPrompt(category, level, count, avoidList)
+    // 🔥 Cap batch to 5 for faster responses
+    const batchSize = Math.min(count, 5)
+    const avoidList = Array.from(askedQuestions).slice(-15)
+    const prompt = buildBatchPrompt(category, level, batchSize, avoidList)
     const raw = await callGemini(prompt)
     let questions = parseAIResponse(raw)
 
@@ -291,8 +324,8 @@ export const generateWithAI = async (category, level, count = 10) => {
             const secondPrompt = buildBatchPrompt(
                 category,
                 level,
-                needed + 2,
-                Array.from(askedQuestions).slice(-40)
+                Math.min(needed + 2, 5),
+                Array.from(askedQuestions).slice(-15)
             )
             const raw2 = await callGemini(secondPrompt)
             let more = parseAIResponse(raw2)
@@ -317,39 +350,19 @@ export const generateWithAI = async (category, level, count = 10) => {
 export const generateExplanation = async (category, question, correct, chosen = null) => {
     if (!GEMINI_KEY) return ''
 
-    const prompt = `You are a helpful exam tutor. Give a SHORT explanation (2-3 sentences, no markdown) for the following bank-exam question.
+    const prompt = `Give a SHORT explanation (2-3 sentences, plain text) for this bank-exam question.
 
 Category: ${category}
 Question: ${question}
 Correct answer: ${correct}
-${chosen ? `Student chose: ${chosen} (this is wrong)` : 'Student did not attempt this question.'}
+${chosen ? `Student chose: ${chosen} (wrong)` : 'Not attempted.'}
 
-Explain briefly:
-1. Why the correct answer is right
-2. (If wrong answer given) The likely mistake
-
-Return plain text only, no JSON, no markdown, no bullet points. Maximum 3 sentences.`
+Explain briefly why the correct answer is right. Plain text only, no markdown.`
 
     try {
-        const url = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent'
-        const res = await fetch(url, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'x-goog-api-key': GEMINI_KEY,
-            },
-            body: JSON.stringify({
-                contents: [{ parts: [{ text: prompt }] }],
-                generationConfig: { temperature: 0.7, maxOutputTokens: 250 },
-            }),
-        })
-        if (!res.ok) return ''
-        const data = await res.json()
-        const text = data?.candidates?.[0]?.content?.parts?.[0]?.text
-        return text ? String(text).trim() : ''
-    } catch {
-        return ''
-    }
+        const raw = await callGemini(prompt, 2)
+        return raw ? String(raw).trim() : ''
+    } catch { return '' }
 }
 
 /* =========================================================
@@ -358,54 +371,31 @@ Return plain text only, no JSON, no markdown, no bullet points. Maximum 3 senten
 const buildTopicPrompt = (topic, languageAiName = 'English') => {
     const isTelugu = languageAiName.toLowerCase().includes('telugu')
 
-    return `You are an Indian bank-exam tutor (SBI PO / IBPS level). Explain the arithmetic topic below in ${languageAiName}.
+    return `You are an Indian bank-exam tutor. Explain the arithmetic topic below in ${languageAiName}.
 
-TOPIC: ${topic.title}
-SUBTITLE: ${topic.subtitle}
-SYLLABUS FOCUS: ${topic.syllabus.join(', ')}
+TOPIC: ${topic.title} — ${topic.subtitle}
+SYLLABUS: ${topic.syllabus.join(', ')}
+${isTelugu ? 'Write explanations in Telugu script. Keep technical terms in English.' : 'Write in simple, student-friendly English.'}
 
-LANGUAGE REQUIREMENTS:
-${isTelugu
-            ? `- Write ALL explanations and step-by-step solutions in Telugu (తెలుగు script).
-- Keep technical terms in English when they are standard (e.g. "Percentage", "Ratio").
-- The QUESTION text may be in Telugu, but numeric options stay as numbers.
-- Use natural, simple Telugu a Telugu-medium student would understand.`
-            : `- Write everything in simple, student-friendly English.`}
-
-Return ONLY valid JSON (no markdown, no code fences) matching this schema:
-
+Return ONLY valid JSON:
 {
-  "definition": "2-3 sentence plain-language definition of the topic in ${languageAiName}.",
-  "keyPoints": [
-    "4 to 6 short bullet points covering the rules, formulas, and tricks — in ${languageAiName}",
-    "..."
-  ],
+  "definition": "2-3 sentence definition",
+  "keyPoints": ["4-6 short bullet points"],
   "example": {
-    "question": "A clean worked example question with real numbers, written in ${languageAiName}.",
-    "options": ["option A", "option B", "option C", "option D"],
-    "correct": "the exact correct option text",
-    "steps": [
-      "Step 1 with numbers (in ${languageAiName})",
-      "Step 2 with numbers",
-      "Step 3 with numbers",
-      "Step 4 confirming the answer"
-    ]
+    "question": "worked example",
+    "options": ["A", "B", "C", "D"],
+    "correct": "the correct option",
+    "steps": ["Step 1", "Step 2", "Step 3", "Step 4"]
   },
   "practice": {
-    "question": "A NEW practice question (different numbers from the example) at bank-exam difficulty, written in ${languageAiName}.",
-    "options": ["option A", "option B", "option C", "option D"],
-    "correct": "the exact correct option text",
-    "explanation": "2-3 sentence explanation in ${languageAiName} of why the correct answer is right."
+    "question": "NEW practice question",
+    "options": ["A", "B", "C", "D"],
+    "correct": "the correct option",
+    "explanation": "2-3 sentence explanation"
   }
 }
 
-STRICT RULES:
-1. All 4 options must be unique.
-2. "correct" must match exactly one of the options.
-3. The example and practice questions must NOT be the same or use the same numbers.
-4. Use Indian exam conventions (₹ symbol, metric units).
-5. Do NOT wrap the response in markdown fences.
-6. Return ONLY the JSON object.${STRICT_JSON_TAIL}`
+Rules: 4 unique options each. "correct" matches one exactly.${STRICT_JSON_TAIL}`
 }
 
 const parseTopicResponse = (raw) => {
@@ -462,37 +452,19 @@ export const generateTopicExplanation = async (
 
     const isTelugu = languageAiName.toLowerCase().includes('telugu')
 
-    const prompt = `You are a bank-exam tutor. Explain in 2-3 plain sentences why the correct answer is right.
-
-Write the explanation in ${languageAiName}.${isTelugu ? ' Use Telugu script (తెలుగు).' : ''}
+    const prompt = `Explain in 2-3 sentences why the correct answer is right, in ${languageAiName}.${isTelugu ? ' Use Telugu script.' : ''}
 
 Topic: ${topic.title}
 Question: ${question}
 Correct answer: ${correct}
 Student chose: ${chosen}
 
-Do not use markdown. Do not use bullet points. Maximum 3 sentences.`
+Max 3 sentences. Plain text, no markdown.`
 
     try {
-        const url = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent'
-        const res = await fetch(url, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'x-goog-api-key': GEMINI_KEY,
-            },
-            body: JSON.stringify({
-                contents: [{ parts: [{ text: prompt }] }],
-                generationConfig: { temperature: 0.7, maxOutputTokens: 240 },
-            }),
-        })
-        if (!res.ok) return ''
-        const data = await res.json()
-        const text = data?.candidates?.[0]?.content?.parts?.[0]?.text
-        return text ? String(text).trim() : ''
-    } catch {
-        return ''
-    }
+        const raw = await callGemini(prompt, 2)
+        return raw ? String(raw).trim() : ''
+    } catch { return '' }
 }
 
 /* =========================================================
@@ -502,63 +474,45 @@ const DI_SUBTOPIC_GUIDE = {
     'table': 'A simple table with rows and columns of numeric data.',
     'bar-simple': 'A single-series bar chart with 4 to 6 categories.',
     'bar-grouped': 'A grouped bar chart with 2 series across 4 to 5 categories.',
-    'line': 'A line graph showing a trend over 5 to 6 time periods, optionally with 2 lines.',
+    'line': 'A line graph showing a trend over 5 to 6 time periods.',
     'pie': 'A pie chart with 4 to 6 slices totalling 100%.',
-    'mixed': 'A combined chart — e.g. bars for one metric and a line for another.',
-    'caselet': 'A paragraph of text describing data in words, no chart. The student must extract values.',
+    'mixed': 'A combined chart.',
+    'caselet': 'A paragraph of text describing data in words, no chart.',
 }
 
 const buildDIPrompt = (subtopic, level, languageAiName = 'English') => {
     const isTelugu = languageAiName.toLowerCase().includes('telugu')
     const subtopicGuide = DI_SUBTOPIC_GUIDE[subtopic] || DI_SUBTOPIC_GUIDE['table']
-
     const difficulty = {
-        easy: 'Simple numbers (under 500). Single-step questions: direct value read, simple % or difference.',
-        medium: 'Numbers up to 2000. Two-step questions: percentage change, ratio, average, comparison.',
-        extreme: 'Large numbers, 3-4 step problems, mixtures of percentage + ratio + average, missing-data inference.',
+        easy: 'Simple numbers (under 500). Single-step questions.',
+        medium: 'Numbers up to 2000. Two-step questions.',
+        extreme: 'Large numbers, 3-4 step problems.',
     }[level]
 
-    return `You are an Indian bank exam tutor (SBI PO / IBPS). Create a Data Interpretation problem.
+    return `Create a Data Interpretation problem.
 
 SUBTOPIC: ${subtopic}
 CHART TYPE: ${subtopicGuide}
 DIFFICULTY: ${level.toUpperCase()} — ${difficulty}
+LANGUAGE: ${languageAiName}${isTelugu ? ' (Telugu script)' : ''}
 
-LANGUAGE: Write all labels, questions, and explanations in ${languageAiName}.${isTelugu ? ' Use Telugu script.' : ''}
-
-Return ONLY valid JSON (no markdown, no code fences) matching this schema:
-
+Return ONLY valid JSON:
 {
-  "title": "A short title for the dataset",
-  "chartType": "table" | "bar-simple" | "bar-grouped" | "line" | "pie" | "mixed" | "caselet",
+  "title": "short title",
+  "chartType": "${subtopic}",
   "data": {
-    "rows": [["...", "..."], ["...", "..."]],
+    "rows": [["Header1", "Header2"], ["Row1", "Value"]],
     "labels": ["A", "B", "C"],
     "series": [{ "name": "Sales", "values": [100, 200, 300] }],
-    "text": "..."
+    "text": "caselet text if applicable"
   },
-  "unit": "₹ in lakhs" or "%" or "units",
+  "unit": "₹ in lakhs",
   "questions": [
-    {
-      "question": "A banking-style question based on the data.",
-      "options": ["opt1", "opt2", "opt3", "opt4"],
-      "correct": "the exact correct option",
-      "explanation": "2-3 sentence step-by-step explanation in ${languageAiName}"
-    }
+    { "question": "text", "options": ["A", "B", "C", "D"], "correct": "exact option", "explanation": "2-3 sentences" }
   ]
 }
 
-STRICT RULES:
-1. Generate EXACTLY 4 questions.
-2. All 4 options per question must be unique.
-3. "correct" must match one of the 4 options exactly.
-4. Every question must be answerable from the data provided.
-5. Numbers must be realistic and clean.
-6. For "caselet", do NOT include labels or series — only "text".
-7. For "table", include "rows"; do NOT include labels or series.
-8. For charts, include "labels" and "series"; do NOT include rows.
-9. Do NOT wrap the response in markdown fences.
-10. Return ONLY the JSON object.${STRICT_JSON_TAIL}`
+Rules: 4 questions. 4 unique options each. correct matches one option exactly.${STRICT_JSON_TAIL}`
 }
 
 const parseDIResponse = (raw) => {
@@ -609,38 +563,31 @@ const buildPracticePrompt = (topic, level, languageAiName = 'English', avoidList
     const isTelugu = languageAiName.toLowerCase().includes('telugu')
 
     const difficulty = {
-        easy: 'Simple arithmetic. Small numbers. Direct application of the rule.',
-        medium: 'Bank exam prelims level. Two-step problems. Moderate numbers.',
-        extreme: 'SBI PO Mains level. Multi-step, tricky distractors, large numbers.',
+        easy: 'Simple arithmetic. Small numbers.',
+        medium: 'Bank exam prelims level. Two-step problems.',
+        extreme: 'SBI PO Mains level. Multi-step, tricky.',
     }[level]
 
     const avoidBlock = avoidList.length
-        ? `\nDO NOT repeat or closely resemble any of these previously asked questions:\n${avoidList.slice(-15).map((q, i) => `${i + 1}. ${String(q).slice(0, 80)}`).join('\n')}\n`
+        ? `\nDO NOT repeat:\n${avoidList.slice(-10).map((q, i) => `${i + 1}. ${String(q).slice(0, 70)}`).join('\n')}\n`
         : ''
 
-    return `You are an Indian bank exam tutor. Generate ONE practice question.
+    return `Generate ONE practice question.
 
 TOPIC: ${topic.title} — ${topic.subtitle}
-SYLLABUS: ${topic.syllabus.join(', ')}
 DIFFICULTY: ${level.toUpperCase()} — ${difficulty}
-LANGUAGE: ${languageAiName}${isTelugu ? ' (use Telugu script, keep numbers as digits)' : ''}
+LANGUAGE: ${languageAiName}${isTelugu ? ' (Telugu script, numbers as digits)' : ''}
 ${avoidBlock}
-Return ONLY this JSON object:
-
+Return ONLY this JSON:
 {
-  "topic": "short topic label like 'Percentage'",
-  "question": "the full question text",
-  "options": ["opt A", "opt B", "opt C", "opt D"],
-  "correct": "the exact same text as one of the 4 options above",
-  "explanation": "2-3 sentence step-by-step explanation showing the calculation"
+  "topic": "short label",
+  "question": "full question",
+  "options": ["A", "B", "C", "D"],
+  "correct": "exact option text",
+  "explanation": "2-3 sentence step-by-step solution"
 }
 
-STRICT RULES:
-1. Exactly 4 unique options.
-2. "correct" must be character-for-character identical to one of the options.
-3. Numbers must be clean and realistic.
-4. Do NOT wrap in markdown fences.
-5. Return ONLY the JSON object.${STRICT_JSON_TAIL}`
+Rules: 4 unique options. "correct" identical to one option.${STRICT_JSON_TAIL}`
 }
 
 const parsePracticeResponse = (raw) => {
@@ -682,7 +629,7 @@ export const generatePracticeQuestion = async (
             if (attempt === 0 && /JSON|Malformed|parse|Not an object|Missing/i.test(err.message)) {
                 try {
                     const strictPrompt = buildPracticePrompt(topic, level, languageAiName, avoidList) +
-                        `\n\nCRITICAL: Your previous response was not valid JSON. Return ONLY a single JSON object starting with { and ending with }. No markdown, no commentary.`
+                        `\n\nCRITICAL: Return ONLY a single JSON object.`
                     const raw = await callGemini(strictPrompt)
                     return parsePracticeResponse(raw)
                 } catch (err2) {
@@ -698,57 +645,43 @@ export const generatePracticeQuestion = async (
    GK / BANKING AWARENESS — practice questions
    ========================================================= */
 const GK_TOPIC_GUIDE = {
-    'banking-awareness': 'RBI functions, monetary policy tools (Repo, CRR, SLR), types of banks, payment systems (UPI, NEFT, RTGS, IMPS), NPA classification, SARFAESI Act, Banking Ombudsman scheme, deposit insurance.',
-    'financial-awareness': 'SEBI, IRDAI, PFRDA, mutual funds, insurance products, government financial inclusion schemes (Jan Dhan, Mudra, Stand-Up India), capital markets, NBFCs.',
-    'static-gk-banking': 'Headquarters of RBI, SBI, NABARD, SEBI, IRDAI; founding years; bank taglines; international financial organisations (IMF, World Bank, ADB); important financial days; currency codes.',
-    'current-affairs-banking': 'Recent RBI policy announcements, banking sector appointments, mergers and acquisitions, government economic initiatives, international financial summits, awards in finance, Union Budget 2025-26 financial sector highlights.',
-    'economy-banking': 'GDP, GNP, NNP, inflation (WPI vs CPI), Union Budget terminology (revenue deficit, fiscal deficit, primary deficit), Economic Survey, Balance of Payments, FDI and FPI.',
+    'banking-awareness': 'RBI functions, monetary policy, types of banks, payment systems, NPA, SARFAESI, Ombudsman.',
+    'financial-awareness': 'SEBI, IRDAI, PFRDA, mutual funds, insurance, Jan Dhan, Mudra, capital markets, NBFCs.',
+    'static-gk-banking': 'Headquarters of RBI, SBI, NABARD, SEBI, IRDAI; founding years; bank taglines; IMF, World Bank.',
+    'current-affairs-banking': 'Recent RBI policy, banking appointments, mergers, economic initiatives, financial summits.',
+    'economy-banking': 'GDP, GNP, NNP, inflation (WPI/CPI), Union Budget terms, Economic Survey, Balance of Payments.',
 }
 
 const buildGKPrompt = (gkTopic, level, languageAiName = 'English', avoidList = []) => {
     const isTelugu = languageAiName.toLowerCase().includes('telugu')
 
     const difficulty = {
-        easy: 'Basic factual question — direct recall. Student must know one fact.',
-        medium: 'Bank exam prelims level — requires understanding and one fact or comparison.',
-        extreme: 'SBI PO Mains / RBI Grade B level — multi-statement or analytical. Include tricky distractors.',
+        easy: 'Basic factual question — direct recall.',
+        medium: 'Prelims level — conceptual understanding.',
+        extreme: 'Mains level — multi-statement, tricky.',
     }[level]
 
     const avoidBlock = avoidList.length
-        ? `\nDO NOT generate any question similar to these already-used questions:\n${avoidList.slice(-12).map((q, i) => `${i + 1}. ${String(q).slice(0, 90)}`).join('\n')}\n`
+        ? `\nDO NOT repeat:\n${avoidList.slice(-10).map((q, i) => `${i + 1}. ${String(q).slice(0, 70)}`).join('\n')}\n`
         : ''
 
-    return `You are an expert Indian bank exam tutor. Generate exactly ONE multiple-choice GK question.
+    return `Generate ONE GK question.
 
-TOPIC: ${gkTopic.title} — ${gkTopic.subtitle}
-SYLLABUS FOCUS: ${GK_TOPIC_GUIDE[gkTopic.id] || gkTopic.syllabus.join(', ')}
+TOPIC: ${gkTopic.title}
+FOCUS: ${GK_TOPIC_GUIDE[gkTopic.id] || gkTopic.syllabus.join(', ')}
 DIFFICULTY: ${level.toUpperCase()} — ${difficulty}
-LANGUAGE: ${languageAiName}${isTelugu ? ' (use Telugu script for the question, options and explanation, but keep proper nouns like RBI, SBI, NEFT in English)' : ''}
+LANGUAGE: ${languageAiName}${isTelugu ? ' (Telugu script, keep RBI/SBI in English)' : ''}
 ${avoidBlock}
-EXAMPLES OF GOOD QUESTIONS:
-- "What does the abbreviation 'NPA' stand for in banking?" → Non-Performing Asset
-- "Which organisation regulates the insurance sector in India?" → IRDAI
-- "What is the reverse repo rate?" → rate at which RBI borrows from banks
-- "The headquarters of NABARD is located in which city?" → Mumbai
-
-Now generate a fresh, unique question.
-
-Return ONLY this JSON structure with real content:
-
+Return ONLY this JSON:
 {
-  "topic": "short label (2-4 words, e.g. 'RBI Policy' or 'Static GK')",
-  "question": "A clear, complete question with proper grammar and full forms of abbreviations on first use.",
-  "options": ["option 1", "option 2", "option 3", "option 4"],
-  "correct": "the exact same text as one of the options above",
-  "explanation": "2-3 sentences explaining the correct answer with the key fact, in ${languageAiName}."
+  "topic": "short label",
+  "question": "clear question",
+  "options": ["A", "B", "C", "D"],
+  "correct": "exact option text",
+  "explanation": "2-3 sentence explanation"
 }
 
-STRICT RULES:
-1. Exactly 4 unique options.
-2. "correct" must be character-for-character identical to one of the 4 options.
-3. Must be a real, factually correct question about the topic.
-4. Do NOT wrap in markdown fences.
-5. Return ONLY the JSON object.${STRICT_JSON_TAIL}`
+Rules: 4 unique options. "correct" matches one option exactly.${STRICT_JSON_TAIL}`
 }
 
 export const generateGKQuestion = async (
@@ -770,7 +703,7 @@ export const generateGKQuestion = async (
             if (attempt === 0 && /JSON|Malformed|parse|Not an object|Missing/i.test(err.message)) {
                 try {
                     const strictPrompt = buildGKPrompt(gkTopic, level, languageAiName, avoidList) +
-                        `\n\nCRITICAL: Your previous response was not valid JSON. Return ONLY a single JSON object starting with { and ending with }. No markdown, no commentary.`
+                        `\n\nCRITICAL: Return ONLY a single JSON object.`
                     const raw = await callGemini(strictPrompt)
                     return parsePracticeResponse(raw)
                 } catch (err2) {
