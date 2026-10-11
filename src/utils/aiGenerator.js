@@ -171,7 +171,7 @@ const callGeminiInner = async (prompt, retries = 4) => {
                     generationConfig: {
                         temperature: 1.0,
                         topP: 0.95,
-                        maxOutputTokens: 2048,
+                        maxOutputTokens: 4096,
                         responseMimeType: 'application/json',
                     },
                 }),
@@ -713,4 +713,130 @@ export const generateGKQuestion = async (
         }
     }
     throw lastErr || new Error('Failed to generate GK question')
+}
+
+/* =========================================================
+   SSC TOPIC CONTENT — lesson generator
+   ========================================================= */
+const buildSSCTopicPrompt = (topic, languageAiName = 'English') => {
+    const isTelugu = languageAiName.toLowerCase().includes('telugu')
+    return `You are an SSC exam maths tutor. Explain the topic below in ${languageAiName}.
+
+TOPIC: ${topic.title} — ${topic.subtitle}
+SYLLABUS: ${topic.syllabus.join(', ')}
+${isTelugu ? 'Write explanations in Telugu script. Keep technical terms in English.' : 'Write in simple, student-friendly English.'}
+
+Return ONLY valid JSON:
+{
+  "definition": "2-3 sentence definition",
+  "keyPoints": ["4-6 short bullet points covering formulas and rules"],
+  "example": {
+    "question": "worked example with real numbers",
+    "options": ["A", "B", "C", "D"],
+    "correct": "the correct option",
+    "steps": ["Step 1", "Step 2", "Step 3", "Step 4"]
+  },
+  "practice": {
+    "question": "NEW practice question at SSC CGL level",
+    "options": ["A", "B", "C", "D"],
+    "correct": "the correct option",
+    "explanation": "2-3 sentence explanation"
+  }
+}
+
+Rules: 4 unique options each. "correct" matches one exactly.${STRICT_JSON_TAIL}`
+}
+
+export const generateSSCTopicContent = async (topic, languageAiName = 'English') => {
+    if (!GEMINI_KEY) throw new Error('Gemini API key missing — check .env')
+    const prompt = buildSSCTopicPrompt(topic, languageAiName)
+    const raw = await callGemini(prompt)
+    return parseTopicResponse(raw)
+}
+
+export const generateSSCTopicExplanation = async (
+    topic,
+    question,
+    correct,
+    chosen,
+    languageAiName = 'English'
+) => {
+    if (!GEMINI_KEY) return ''
+    const isTelugu = languageAiName.toLowerCase().includes('telugu')
+    const prompt = `Explain in 2-3 sentences why the correct answer is right, in ${languageAiName}.${isTelugu ? ' Use Telugu script.' : ''}
+
+Topic: ${topic.title}
+Question: ${question}
+Correct answer: ${correct}
+Student chose: ${chosen}
+
+Max 3 sentences. Plain text, no markdown.`
+
+    try {
+        const raw = await callGemini(prompt, 2)
+        return raw ? String(raw).trim() : ''
+    } catch { return '' }
+}
+
+/* =========================================================
+   SSC PRACTICE — single question per call
+   ========================================================= */
+const buildSSCPracticePrompt = (topic, level, languageAiName = 'English', avoidList = []) => {
+    const isTelugu = languageAiName.toLowerCase().includes('telugu')
+
+    const difficulty = {
+        easy: 'Basic SSC CGL level. Direct formula application.',
+        medium: 'SSC CGL Tier-I level. Two-step problems.',
+        extreme: 'SSC CGL Mains / CHSL level. Multi-step, tricky.',
+    }[level]
+
+    const avoidBlock = avoidList.length
+        ? `\nDO NOT repeat:\n${avoidList.slice(-10).map((q, i) => `${i + 1}. ${String(q).slice(0, 70)}`).join('\n')}\n`
+        : ''
+
+    return `Generate ONE SSC-level maths question.
+
+TOPIC: ${topic.title} — ${topic.subtitle}
+DIFFICULTY: ${level.toUpperCase()} — ${difficulty}
+LANGUAGE: ${languageAiName}${isTelugu ? ' (Telugu script, numbers as digits)' : ''}
+${avoidBlock}
+Return ONLY this JSON:
+{
+  "topic": "short label",
+  "question": "full question",
+  "options": ["A", "B", "C", "D"],
+  "correct": "exact option text",
+  "explanation": "2-3 sentence step-by-step solution"
+}
+
+Rules: 4 unique options. "correct" identical to one option.${STRICT_JSON_TAIL}`
+}
+
+export const generateSSCPracticeQuestion = async (
+    topic,
+    level,
+    languageAiName = 'English',
+    avoidList = []
+) => {
+    if (!GEMINI_KEY) throw new Error('Gemini API key missing — check .env')
+
+    let lastErr
+    for (let attempt = 0; attempt < 2; attempt++) {
+        try {
+            const prompt = buildSSCPracticePrompt(topic, level, languageAiName, avoidList)
+            const raw = await callGemini(prompt)
+            return parsePracticeResponse(raw)
+        } catch (err) {
+            lastErr = err
+            if (attempt === 0 && /JSON|Malformed|parse|Not an object|Missing/i.test(err.message)) {
+                try {
+                    const strictPrompt = buildSSCPracticePrompt(topic, level, languageAiName, avoidList) +
+                        `\n\nCRITICAL: Return ONLY a single JSON object.`
+                    const raw = await callGemini(strictPrompt)
+                    return parsePracticeResponse(raw)
+                } catch (err2) { lastErr = err2 }
+            }
+        }
+    }
+    throw lastErr || new Error('Failed to generate SSC question')
 }

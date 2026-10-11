@@ -13,6 +13,9 @@ import GKPractice from './pages/GKPractice.jsx'
 import ExamHome from './pages/ExamHome.jsx'
 import ExamRunner from './pages/ExamRunner.jsx'
 import ExamResult from './pages/ExamResult.jsx'
+import SSCMaths from './pages/SSCMaths.jsx'
+import SSCTopicDetail from './pages/SSCTopicDetail.jsx'
+import SSCTopicPractice from './pages/SSCTopicPractice.jsx'
 
 const App = () => {
   const navigate = useNavigate()
@@ -58,6 +61,10 @@ const App = () => {
         <Route path="/exam" element={<ExamHome />} />
         <Route path="/exam/result" element={<ExamResult />} />
         <Route path="/exam/:type/:stage" element={<ExamRunner />} />
+
+        <Route path="/ssc" element={<SSCMaths />} />
+        <Route path="/ssc/:id" element={<SSCTopicDetail />} />
+        <Route path="/ssc/:id/practice" element={<SSCTopicPractice />} />
 
         <Route path="/game" element={
           <GameScreen

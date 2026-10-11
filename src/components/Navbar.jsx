@@ -1,14 +1,16 @@
 import React, { useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import {
-    Puzzle, Home, Calculator, Menu, X, Phone, AlertTriangle, BookOpen, GraduationCap
+    Puzzle, Home, Calculator, Menu, X, Phone, AlertTriangle, BookOpen, GraduationCap, Sigma
 } from 'lucide-react'
+
 
 const NAV_ITEMS = [
     { label: 'Home', path: '/', Icon: Home },
     { label: 'Arithmetic', path: '/arithmetic', Icon: Calculator },
     { label: 'GK', path: '/gk', Icon: BookOpen },
-    { label: 'Exam', path: '/exam', Icon: GraduationCap }
+    { label: 'Exam', path: '/exam', Icon: GraduationCap },
+    { label: 'SSC Maths', path: '/ssc', Icon: Sigma },
 ]
 
 const Navbar = () => {
@@ -41,7 +43,7 @@ const Navbar = () => {
     return (
         <>
             {/* ===== SINGLE NAVBAR ===== */}
-            <nav className="fixed top-0 left-0 right-0 z-[90] h-14 bg-slate-950/90 backdrop-blur-xl border-b border-violet-500/80 shadow-[0_4px_20px_rgba(0,0,0,0.35)]">
+            <nav className="fixed top-0 left-0 right-0 z-[90] h-14 bg-slate-950/90 backdrop-blur-xl border-b-2 border-violet-500/80 shadow-[0_4px_20px_rgba(0,0,0,0.35)]">
                 <div className="h-full max-w-6xl mx-auto px-3 sm:px-5 flex items-center justify-between gap-3">
 
                     {/* LEFT — Brand */}
@@ -86,7 +88,7 @@ const Navbar = () => {
                     <div className="flex items-center gap-2">
 
                         {/* Credit — hidden on small screens */}
-                        <span className="hidden lg:inline text-[10px] font-black tracking-[1.4px] uppercase text-slate-500 pr-3 border-r border-slate-500/20">
+                        <span className="hidden lg:inline text-[10px] font-black tracking-[1.4px] uppercase text-slate-400 pr-3 border-r border-slate-500/20">
                             Developed by Prasad Nelaturi
                         </span>
 
@@ -119,45 +121,99 @@ const Navbar = () => {
                 </div>
             </nav>
 
-            {/* ===== MOBILE DROPDOWN ===== */}
+            {/* ===== MOBILE FULL-SCREEN MENU ===== */}
             {open && (
-                <>
-                    {/* Full-screen blurred overlay — tap to close */}
-                    <div
-                        onClick={() => setOpen(false)}
-                        className="fixed inset-0 z-[84] md:hidden bg-slate-950/70 backdrop-blur-md animate-[fadeIn_180ms_ease-out]"
-                        aria-hidden="true"
-                    />
+                <div className="fixed inset-0 z-[100] md:hidden bg-slate-950">
+                    <div className="flex h-full min-h-[100dvh] flex-col">
 
-                    {/* Dropdown panel on top of the overlay */}
-                    <div className="fixed top-14 left-0 right-0 z-[85] md:hidden bg-slate-950/98 backdrop-blur-xl border-b border-violet-500/80 shadow-[0_20px_50px_rgba(0,0,0,0.7)]">
-                        <div className="px-4 py-3 flex flex-col items-center gap-1.5">
-                            {NAV_ITEMS.map((item) => {
-                                const active = item.path === '/' ? location.pathname === '/' : location.pathname.startsWith(item.path)
-                                const Icon = item.Icon
-                                return (
-                                    <Link
-                                        key={item.label}
-                                        to={item.path}
-                                        onClick={() => setOpen(false)}
-                                        className={`flex items-center justify-center gap-2 px-5 py-3 rounded-xl text-[12px] font-black tracking-[1.2px] uppercase transition-all max-w-xs ${active
-                                            ? 'bg-gradient-to-br from-violet-500/30 to-pink-500/30 border border-pink-400/50 text-white shadow-[0_4px_14px_rgba(236,72,153,0.25)]'
-                                            : 'text-slate-400 hover:text-slate-100 hover:bg-slate-800/50 border border-transparent'
-                                            }`}
-                                    >
-                                        <Icon size={14} strokeWidth={2.8} />
-                                        <span>{item.label}</span>
-                                    </Link>
-                                )
-                            })}
-                            <div className="h-px my-1.5 w-full max-w-xs bg-gradient-to-r from-transparent via-violet-500/80 to-transparent" />
-                            <span className="px-3 py-1 text-[11px] font-black tracking-[1.4px] uppercase text-slate-600 text-center">
-                                Developed by Prasad Nelaturi
-                            </span>
+                        {/* Header */}
+                        <div className="flex h-16 shrink-0 items-center justify-between border-b border-slate-800/80 px-5">
+                            <div className="flex items-center gap-2">
+                                <div className="h-2.5 w-2.5 rounded-full bg-violet-500 shadow-[0_0_12px_rgba(139,92,246,0.8)]" />
+                                <span className="text-sm font-black uppercase tracking-[2px] text-white">
+                                    Menu
+                                </span>
+                            </div>
+
+                            {/* Close Button */}
+                            <button
+                                type="button"
+                                onClick={() => setOpen(false)}
+                                className="flex h-10 w-10 items-center justify-center rounded-full border border-slate-700 bg-slate-900 text-slate-300 transition-all hover:border-violet-500 hover:text-white"
+                                aria-label="Close menu"
+                            >
+                                <X size={20} strokeWidth={2.5} />
+                            </button>
+                        </div>
+
+                        {/* Navigation */}
+                        <nav className="flex flex-1 flex-col justify-center overflow-y-auto px-5 py-8">
+                            <div className="mx-auto flex w-full max-w-md flex-col gap-6">
+                                {NAV_ITEMS.map((item, index) => {
+                                    const active =
+                                        item.path === '/'
+                                            ? location.pathname === '/'
+                                            : location.pathname.startsWith(item.path)
+
+                                    const Icon = item.Icon
+
+                                    return (
+                                        <Link
+                                            key={item.label}
+                                            to={item.path}
+                                            onClick={() => setOpen(false)}
+                                            className={`group flex w-full items-center gap-4 rounded-2xl border px-3 py-2 transition-all duration-300 ${active
+                                                    ? 'border-violet-500/50 bg-gradient-to-r from-violet-500/20 to-pink-500/10 text-white shadow-[0_8px_30px_rgba(139,92,246,0.12)]'
+                                                    : 'border-transparent text-slate-400 hover:border-slate-800 hover:bg-slate-900/70 hover:text-white'
+                                                }`}
+                                        >
+                                            {/* Icon */}
+                                            <div
+                                                className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl transition-all ${active
+                                                        ? 'bg-violet-500 text-white shadow-[0_0_20px_rgba(139,92,246,0.35)]'
+                                                        : 'bg-slate-900 text-slate-500 group-hover:bg-slate-800 group-hover:text-violet-400'
+                                                    }`}
+                                            >
+                                                <Icon size={20} strokeWidth={2.4} />
+                                            </div>
+
+                                            {/* Label */}
+                                            <div className="flex min-w-0 flex-1 flex-col">
+                                                <span className="text-[10px] font-bold uppercase tracking-[2px] text-slate-600">
+                                                    0{index + 1}
+                                                </span>
+
+                                                <span className="text-base font-black uppercase tracking-[1.5px]">
+                                                    {item.label}
+                                                </span>
+                                            </div>
+
+                                            {/* Active indicator */}
+                                            {active && (
+                                                <div className="h-2 w-2 shrink-0 rounded-full bg-pink-400 shadow-[0_0_12px_rgba(244,114,182,0.9)]" />
+                                            )}
+                                        </Link>
+                                    )
+                                })}
+                            </div>
+                        </nav>
+
+                        {/* Footer */}
+                        <div className="shrink-0 border-t border-violet-600 px-5 py-5">
+                            <div className="mx-auto flex max-w-md items-center justify-between">
+                                <span className="text-[13px] font-bold uppercase tracking-[1.5px] text-slate-300">
+                                    Developed by
+                                </span>
+
+                                <span className="text-[14px] font-black uppercase tracking-[1px] text-white">
+                                    Prasad Nelaturi
+                                </span>
+                            </div>
                         </div>
                     </div>
-                </>
+                </div>
             )}
+
 
             {/* ===== LEAVE MATCH CONFIRM MODAL ===== */}
             {showConfirm && (
