@@ -1,12 +1,38 @@
 import React from 'react'
 import { Link } from 'react-router-dom'
+import { ARITHMETIC_TOPICS } from '../data/arithmeticTopics.js'
+
 import {
     Calculator, ArrowRight, Divide, SquareFunction, Search,
     ListOrdered, BarChart3, Sparkles, BookOpen, Zap,
+    Sigma, Hash, Percent, TrendingUp, BarChart2, UserCheck,
+    Briefcase, Droplet, Gauge, Handshake, Coins, Shuffle,
+    Dices, Beaker, Box,
 } from 'lucide-react'
-import { ARITHMETIC_TOPICS } from '../data/arithmeticTopics.js'
 
-const TOPIC_ICONS = { Divide, SquareFunction, Search, ListOrdered, BarChart3 }
+const TOPIC_ICONS = {
+    Sigma,
+    Hash,
+    Percent,
+    TrendingUp,
+    BarChart2,
+    UserCheck,
+    Briefcase,
+    Droplet,
+    Gauge,
+    Handshake,
+    Coins,
+    Shuffle,
+    Dices,
+    Beaker,
+    Box,
+    Divide,
+    SquareFunction,
+    Search,
+    ListOrdered,
+    BarChart3,
+}
+
 
 const TOPIC_STYLES = {
     violet: {

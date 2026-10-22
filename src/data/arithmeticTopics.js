@@ -4,6 +4,7 @@
  */
 
 export const ARITHMETIC_TOPICS = [
+    /* 1 */
     {
         id: 'simplifications',
         title: 'Simplifications',
@@ -20,21 +21,309 @@ export const ARITHMETIC_TOPICS = [
             'Percentage in expressions',
         ],
     },
+
+    /* 2 */
     {
-        id: 'cassette',
-        title: 'Cassette',
-        subtitle: 'Ratio, Proportion & Partnership',
-        shortDesc: 'Split a total into parts based on a given ratio — the classic partnership problem.',
-        icon: 'Divide',
-        color: 'violet',
+        id: 'number-series',
+        title: 'Number Series',
+        subtitle: 'Spot the pattern',
+        shortDesc: 'Find the next term in a numeric sequence by identifying its underlying rule.',
+        icon: 'ListOrdered',
+        color: 'blue',
         syllabus: [
-            'Simple ratio problems (a:b)',
-            'Dividing a quantity in a given ratio',
-            'Compound ratio',
-            'Proportion (mean, third, fourth)',
-            'Partnership: profit sharing with capital × time',
+            'Arithmetic series (add/subtract constant)',
+            'Geometric series (multiply/divide constant)',
+            'Square and cube series',
+            'Prime and Fibonacci series',
+            'Alternating and mixed series',
+            'Double-difference series',
         ],
     },
+
+    /* 3 */
+    {
+        id: 'number-system',
+        title: 'Number System',
+        subtitle: 'Divisibility, LCM & HCF',
+        shortDesc: 'Master factors, multiples, divisibility rules, remainders, and LCM/HCF.',
+        icon: 'Hash',
+        color: 'violet',
+        syllabus: [
+            'Divisibility rules (2, 3, 4, 5, 9, 11)',
+            'LCM and HCF',
+            'Remainder theorem basics',
+            'Prime factorisation',
+            'Unit digit and cyclicity',
+            'Fractions and decimals',
+        ],
+    },
+
+    /* 4 */
+    {
+        id: 'percentage',
+        title: 'Percentage',
+        subtitle: 'Parts of a whole',
+        shortDesc: 'Convert between fractions, decimals, and percentages to solve real-world problems.',
+        icon: 'Percent',
+        color: 'pink',
+        syllabus: [
+            'Basics of percentage',
+            'Percentage increase / decrease',
+            'Successive percentage change',
+            'Reverse percentage',
+            'Percentage in profit, loss, discount',
+            'Percentage in data interpretation',
+        ],
+    },
+
+    /* 5 */
+    {
+        id: 'profit-loss',
+        title: 'Profit & Loss',
+        subtitle: 'CP, SP & Discount',
+        shortDesc: 'Calculate cost price, selling price, marked price, discounts, and profit margins.',
+        icon: 'TrendingUp',
+        color: 'emerald',
+        syllabus: [
+            'Profit / loss basics',
+            'Percentage profit and loss',
+            'Marked price and discount',
+            'Successive discounts',
+            'Dishonest seller problems',
+            'Profit & loss with overheads',
+        ],
+    },
+
+    /* 6 */
+    {
+        id: 'average',
+        title: 'Average',
+        subtitle: 'Mean and its applications',
+        shortDesc: 'Find means of groups, replace elements, and solve weighted-average problems.',
+        icon: 'BarChart2',
+        color: 'amber',
+        syllabus: [
+            'Simple average',
+            'Weighted average',
+            'Average of consecutive numbers',
+            'Age / score average problems',
+            'Adding or removing a member',
+            'Speed average',
+        ],
+    },
+
+    /* 7 */
+    {
+        id: 'ages',
+        title: 'Ages',
+        subtitle: 'Age-related word problems',
+        shortDesc: 'Solve present, past, and future age puzzles using linear equations and ratios.',
+        icon: 'UserCheck',
+        color: 'violet',
+        syllabus: [
+            'Present age problems',
+            'Past / future age comparisons',
+            'Age ratio problems',
+            'Family age sums',
+            'Twice / thrice age relations',
+        ],
+    },
+
+    /* 8 */
+    {
+        id: 'ratio-proportion',
+        title: 'Ratio & Proportion',
+        subtitle: 'Divide and compare',
+        shortDesc: 'Master ratios, proportions, mean/third/fourth proportional, and ratio applications.',
+        icon: 'Divide',
+        color: 'blue',
+        syllabus: [
+            'Basics of ratio (a:b)',
+            'Dividing a quantity in a given ratio',
+            'Compound ratio',
+            'Proportion: mean, third, fourth',
+            'Ratio in age, money, mixtures',
+            'Ratio-based comparisons',
+        ],
+    },
+
+    /* 9 */
+    {
+        id: 'time-work',
+        title: 'Time & Work',
+        subtitle: 'Efficiency, days & labour',
+        shortDesc: 'Solve problems on work rates, combined efficiency, and work-days.',
+        icon: 'Briefcase',
+        color: 'pink',
+        syllabus: [
+            'One-person work problems',
+            'Two / three person work',
+            'Work + wages',
+            'Men–days–hours formula',
+            'Work leaving / joining mid-way',
+            'Efficiency-based problems',
+        ],
+    },
+
+    /* 10 */
+    {
+        id: 'pipes-cisterns',
+        title: 'Pipes & Cisterns',
+        subtitle: 'Fill, drain, and leaks',
+        shortDesc: 'Solve tank-filling and draining problems using time & work logic.',
+        icon: 'Droplet',
+        color: 'emerald',
+        syllabus: [
+            'Two-inlet pipes',
+            'Inlet + outlet combined',
+            'Leak problems',
+            'Pipes opened at intervals',
+            'Efficiency change problems',
+        ],
+    },
+
+    /* 11 */
+    {
+        id: 'time-distance',
+        title: 'Time & Distance',
+        subtitle: 'Speed, trains & boats',
+        shortDesc: 'Solve speed/distance/time questions, train crossing, and boat & stream problems.',
+        icon: 'Gauge',
+        color: 'amber',
+        syllabus: [
+            'Speed = Distance / Time',
+            'Average speed',
+            'Relative speed',
+            'Train crossing pole / platform / train',
+            'Boat & stream (upstream/downstream)',
+            'Speed conversion (km/h ↔ m/s)',
+        ],
+    },
+
+    /* 12 */
+    {
+        id: 'partnership',
+        title: 'Partnership',
+        subtitle: 'Profit sharing by capital × time',
+        shortDesc: 'Split business profits fairly based on each partner\'s capital and duration of investment.',
+        icon: 'Handshake',
+        color: 'violet',
+        syllabus: [
+            'Simple partnership',
+            'Compound partnership (capital × time)',
+            'Profit sharing ratio',
+            'Partners joining / leaving',
+            'Capital adjustment problems',
+        ],
+    },
+
+    /* 13 */
+    {
+        id: 'simple-interest',
+        title: 'Simple Interest',
+        subtitle: 'SI formula and applications',
+        shortDesc: 'Apply the simple interest formula to find P, R, T, or SI, including installment problems.',
+        icon: 'Coins',
+        color: 'blue',
+        syllabus: [
+            'SI = PRT / 100',
+            'Find P, R, T, or SI',
+            'Difference between SI and CI (1st year)',
+            'Installment problems',
+            'Rate-change problems',
+        ],
+    },
+
+    /* 14 */
+    {
+        id: 'compound-interest',
+        title: 'Compound Interest',
+        subtitle: 'CI with compounding periods',
+        shortDesc: 'Solve compound interest problems with annual, half-yearly, and quarterly compounding.',
+        icon: 'TrendingUp',
+        color: 'pink',
+        syllabus: [
+            'CI formula A = P(1 + r/n)^(nt)',
+            'Annual, half-yearly, quarterly',
+            'Difference between CI and SI',
+            'Rate change over years',
+            'Depreciation problems',
+        ],
+    },
+
+    /* 15 */
+    {
+        id: 'permutation-combination',
+        title: 'Permutation & Combination',
+        subtitle: 'Arrange and select',
+        shortDesc: 'Count arrangements and selections using permutations, combinations, and factorials.',
+        icon: 'Shuffle',
+        color: 'emerald',
+        syllabus: [
+            'Factorial notation',
+            'Permutation (nPr)',
+            'Combination (nCr)',
+            'Word / digit arrangements',
+            'Circular permutations',
+            'Selection with restrictions',
+        ],
+    },
+
+    /* 16 */
+    {
+        id: 'probability',
+        title: 'Probability',
+        subtitle: 'Chance of an event',
+        shortDesc: 'Compute probabilities of simple and compound events involving dice, coins, and cards.',
+        icon: 'Dices',
+        color: 'amber',
+        syllabus: [
+            'Basic probability = favourable / total',
+            'Coins, dice, cards problems',
+            'Independent events',
+            'Mutually exclusive events',
+            'Conditional probability (basic)',
+            'Complementary events',
+        ],
+    },
+
+    /* 17 */
+    {
+        id: 'alligation-mixture',
+        title: 'Alligation & Mixture',
+        subtitle: 'Blending ingredients',
+        shortDesc: 'Solve mixture and alligation problems to find ratios and concentrations.',
+        icon: 'Beaker',
+        color: 'violet',
+        syllabus: [
+            'Alligation rule',
+            'Mixing two solutions',
+            'Milk–water mixtures',
+            'Replacement problems',
+            'Multiple-step mixtures',
+            'Cost of mixture',
+        ],
+    },
+
+    /* 18 */
+    {
+        id: 'mensuration',
+        title: 'Mensuration',
+        subtitle: '2D & 3D measurements',
+        shortDesc: 'Find area, perimeter, surface area, and volume of common 2D and 3D shapes.',
+        icon: 'Box',
+        color: 'blue',
+        syllabus: [
+            'Area & perimeter of 2D shapes',
+            'Circle, sector, ring',
+            'Surface area of cube, cuboid, cylinder',
+            'Volume of 3D solids',
+            'Cone, sphere, hemisphere',
+            'Combination of solids',
+        ],
+    },
+
+    /* 19 */
     {
         id: 'quadratic-equation',
         title: 'Quadratic Equation',
@@ -50,37 +339,8 @@ export const ARITHMETIC_TOPICS = [
             'Sum and product of roots (SBI PO style)',
         ],
     },
-    {
-        id: 'odd-one-out',
-        title: 'Odd One Out',
-        subtitle: 'Spot the different one',
-        shortDesc: 'Find the number or word that does not fit the pattern.',
-        icon: 'Search',
-        color: 'blue',
-        syllabus: [
-            'Perfect squares and cubes',
-            'Prime numbers and composites',
-            'Multiples and factors',
-            'Even / odd sets',
-            'Alphabet position rules',
-        ],
-    },
-    {
-        id: 'missing-series',
-        title: 'Missing Series',
-        subtitle: 'Number & alphabet patterns',
-        shortDesc: 'Find the next term in a sequence by identifying its rule.',
-        icon: 'ListOrdered',
-        color: 'emerald',
-        syllabus: [
-            'Arithmetic progression (add a constant)',
-            'Geometric progression (multiply by a constant)',
-            'Squares and cubes series',
-            'Prime number series',
-            'Alternating and mixed series',
-            'Fibonacci-style (sum of previous two)',
-        ],
-    },
+
+    /* ─────── Special: Data Interpretation (kept for subtopics flow) ─────── */
     {
         id: 'data-interpretation',
         title: 'Data Interpretation',
@@ -136,7 +396,6 @@ export const LANGUAGES = [
 export const getLanguageById = (id) =>
     LANGUAGES.find((l) => l.id === id) || LANGUAGES[0]
 
-// Persist selected language across visits
 const LANG_KEY = 'puzzle-topic-lang'
 
 export const getSavedLanguage = () => {
